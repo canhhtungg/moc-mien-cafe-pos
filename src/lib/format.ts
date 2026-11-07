@@ -4,6 +4,26 @@ export function formatVND(amount: number): string {
   return new Intl.NumberFormat("vi-VN").format(Math.round(amount)) + "đ";
 }
 
+/**
+ * Định dạng chuỗi số thành dạng có dấu chấm phân cách mỗi 3 chữ số (VD: 35000 -> "35.000")
+ */
+export function formatThousandDigits(raw: string | number): string {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  const num = Number(digits);
+  if (!Number.isFinite(num)) return "";
+  return new Intl.NumberFormat("vi-VN").format(num);
+}
+
+/**
+ * Chuyển chuỗi có dấu phân cách 3 chữ số về số nguyên (VD: "35.000" -> 35000)
+ */
+export function parseThousandDigits(formatted: string): number {
+  const digits = String(formatted ?? "").replace(/\D/g, "");
+  if (!digits) return 0;
+  return Number(digits) || 0;
+}
+
 export function formatTimeVN(iso: string): string {
   try {
     const d = new Date(iso);

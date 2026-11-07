@@ -4,6 +4,7 @@ import { resetCafeDatabaseToSeed } from "@/server/db/client";
 import { CafeService } from "@/server/services/CafeService";
 import { VietQRService } from "@/server/services/VietQRService";
 import { canRoleAccessPath } from "@/lib/rbac";
+import { formatThousandDigits, parseThousandDigits } from "@/lib/format";
 import { GET as getRevenueRoute } from "@/app/api/manager/revenue/route";
 import { POST as postMenuRoute } from "@/app/api/manager/menu/route";
 import { GET as getBarStockRoute } from "@/app/api/bar-stock/route";
@@ -131,5 +132,41 @@ describe("Mộc Miên Café — Nghiệp vụ cốt lõi & Phân quyền chặt 
     expect(qr.payload).toContain("540575000");
     expect(qr.payload).toMatch(/6304[0-9A-F]{4}$/);
     expect(qr.qrDataUrl.startsWith("data:image/png;base64,")).toBe(true);
+  });
+
+  it("ưu tiên nguyên liệu sắp hết lên đầu danh sách, thêm nguyên liệu mới, tách 3 số giá bán và thống kê doanh thu Ngày/Tuần/Tháng", async () => {
+    const svc = new CafeService();
+
+    // 1. Nguyên liệu sắp hết luôn đứng đầu danh sách
+    const ings = await svc.listIngredients();
+    expect(ings.length).toBeGreaterThanOrEqual(6);
+    expect(ings[0].currentStock).toBeLessThanOrEqual(ings[0].minStock);
+    expect(ings[1].currentStock).toBeLessThanOrEqual(ings[1].minStock);
+
+    // Thêm loại nguyên liệu mới có tồn kho thấp (1 < minStock 5) -> tự đẩy lên nhóm ưu tiên đầu
+    const afterCreate = await svc.createIngredient({
+      name: "Kem Béo Thực Vật Rich's",
+      unit: "hộp 454g",
+      currentStock: 1,
+      minStock: 5,
+    });
+    expect(afterCreate.some((i) => i.name === "Kem Béo Thực Vật Rich's")).toBe(true);
+    expect(afterCreate[0].name).toBe("Kem Béo Thực Vật Rich's");
+
+    // 2. Định dạng tách 3 chữ số cho ô nhập giá bán
+    expect(formatThousandDigits(35000)).toBe("35.000");
+    expect(formatThousandDigits("125000")).toBe("125.000");
+    expect(parseThousandDigits("35.000")).toBe(35000);
+
+    // 3. Thống kê doanh thu theo Ngày / Tuần / Tháng
+    const dayRep = await svc.getRevenueReport("day");
+    const weekRep = await svc.getRevenueReport("week");
+    const monthRep = await svc.getRevenueReport("month");
+
+    expect(dayRep.breakdown).toHaveLength(4); // 4 ca trong ngày
+    expect(weekRep.breakdown).toHaveLength(7); // 7 ngày trong tuần
+    expect(monthRep.breakdown).toHaveLength(4); // 4 tuần trong tháng
+    expect(weekRep.totalRevenue).toBeGreaterThan(dayRep.totalRevenue);
+    expect(monthRep.totalRevenue).toBeGreaterThan(weekRep.totalRevenue);
   });
 });

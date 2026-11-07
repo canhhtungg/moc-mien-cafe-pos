@@ -7,3 +7,4 @@
 - Đã vượt qua bộ kiểm thử Vitest (`5/5 passed`) và kiểm tra TypeScript (`0 errors`).
 - Đã tạo kho GitHub riêng https://github.com/canhhtungg/moc-mien-cafe-pos và triển khai Production thành công lên Vercel tại https://moc-mien-cafe-pos.vercel.app (`READY`).
 - Đã gắn Cloud Storage thật (`moc-mien-cafe-store` trên Vercel Blob) và nâng cấp cơ chế đồng bộ CSDL xuyên suốt giữa các Serverless Functions, kết hợp cập nhật giao diện tức thì + tự động làm mới mỗi 5 giây tại trang Sơ đồ bàn (`/tables`) và Pha chế (`/barista`).
+- Đã nâng cấp giao diện Quản lý (`/manager/menu` & `/manager/revenue`): tự động ưu tiên nguyên liệu sắp hết lên đầu danh sách với màu cam/đỏ nổi bật, cho phép thêm loại nguyên liệu mới, tự động phân cách 3 chữ số cho ô Giá bán (`35.000đ`), và thống kê doanh thu chi tiết theo Ngày / Tuần / Tháng.

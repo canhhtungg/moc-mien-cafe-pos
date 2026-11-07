@@ -12,7 +12,14 @@ export async function GET(req: NextRequest) {
       svc.getBootstrap(),
       svc.listIngredients(),
     ]);
-    return NextResponse.json({ menu: boot.menu, ingredients });
+    return NextResponse.json(
+      { menu: boot.menu, ingredients },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
+      }
+    );
   } catch (err) {
     return handleApiError(err, "Không thể tải nguyên liệu quầy pha chế.");
   }
@@ -35,6 +42,17 @@ export async function PATCH(req: NextRequest) {
         String(body.ingredientId),
         Number(body.delta ?? 0)
       );
+      return NextResponse.json({ ingredients });
+    }
+
+    if (body.type === "create-ingredient") {
+      requireRequestRole(req, ["Manager"], "Thêm loại nguyên liệu mới vào kho");
+      const ingredients = await svc.createIngredient({
+        name: String(body.name ?? ""),
+        unit: String(body.unit ?? ""),
+        currentStock: Number(body.currentStock ?? 0),
+        minStock: Number(body.minStock ?? 2),
+      });
       return NextResponse.json({ ingredients });
     }
 

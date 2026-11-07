@@ -4,6 +4,10 @@ function minsAgoISO(mins: number): string {
   return new Date(Date.now() - mins * 60 * 1000).toISOString();
 }
 
+function daysAgoISO(days: number, minsOffset = 120): string {
+  return new Date(Date.now() - (days * 24 * 60 + minsOffset) * 60 * 1000).toISOString();
+}
+
 export async function seedCafeDatabase(db: Client): Promise<void> {
   const now = new Date().toISOString();
 
@@ -103,7 +107,7 @@ export async function seedCafeDatabase(db: Client): Promise<void> {
     { sql: "INSERT INTO cafe_tables VALUES (?, ?, ?, ?, ?, ?)", args: ["B11", "Bàn 11", "Hiên sân vườn", 4, "Trong", null] },
     { sql: "INSERT INTO cafe_tables VALUES (?, ?, ?, ?, ?, ?)", args: ["B12", "Bàn 12", "Hiên sân vườn", 4, "Trong", null] },
 
-    // 5. Kho nguyên liệu quầy bar (có 2 mặt hàng chạm ngưỡng sắp hết)
+    // 5. Kho nguyên liệu quầy bar (có mặt hàng chạm ngưỡng sắp hết để đẩy ưu tiên lên đầu)
     { sql: "INSERT INTO cafe_ingredients VALUES (?, ?, ?, ?, ?, ?)", args: ["NL-CF", "Hạt cà phê rang mộc Cầu Đất", "kg", 4.5, 2, now] },
     { sql: "INSERT INTO cafe_ingredients VALUES (?, ?, ?, ?, ?, ?)", args: ["NL-SUATUOI", "Sữa tươi thanh trùng Dalatmilk", "hộp 1L", 3, 6, now] },
     { sql: "INSERT INTO cafe_ingredients VALUES (?, ?, ?, ?, ?, ?)", args: ["NL-SUADAC", "Sữa đặc có đường", "lon", 12, 5, now] },
@@ -116,7 +120,87 @@ export async function seedCafeDatabase(db: Client): Promise<void> {
     { sql: "INSERT INTO cafe_customers VALUES (?, ?, ?, ?, ?)", args: ["0987654321", "Hoàng Nam", 8, 0, 310000] },
     { sql: "INSERT INTO cafe_customers VALUES (?, ?, ?, ?, ?)", args: ["0912345678", "Thu Hà", 5, 0, 195000] },
 
-    // 7. Đơn hàng mẫu sinh động trong ca (đã phục vụ + đã pha xong + đang pha + mới gọi)
+    // 7A. Các đơn lịch sử trong Tháng & trong Tuần (Đã phục vụ xong - DaGiao)
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0991", "#091", "TaiBan", "B03", "Bàn 03", "NV-CASHIER", "Lan Anh", null, null, 145000, 0, 145000, "VietQR", null, null, "DaGiao", null, daysAgoISO(22, 60), daysAgoISO(22, 45)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0991", "CF-BACXIU", "Bạc Xỉu Kem Muối", 2, "M", "70", "ItDa", "", "", 41000, 82000],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0991", "BN-CROISSANT", "Bánh Sừng Bò Bơ Pháp", 2, null, null, null, "", "", 31500, 63000],
+    },
+
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0992", "#092", "MangDi", null, null, "NV-CASHIER", "Lan Anh", "0901234567", "Minh Anh", 180000, 0, 180000, "TienMat", 200000, 20000, "DaGiao", null, daysAgoISO(15, 180), daysAgoISO(15, 165)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0992", "MC-UJI", "Matcha Uji Kem Phô Mai", 4, "S", "70", "BinhThuong", "", "", 45000, 180000],
+    },
+
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0993", "#093", "TaiBan", "B06", "Bàn 06", "NV-CASHIER", "Lan Anh", null, null, 215000, 0, 215000, "VietQR", null, null, "DaGiao", null, daysAgoISO(10, 90), daysAgoISO(10, 75)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0993", "TR-DAOCAMSA", "Trà Đào Cam Sả", 3, "M", "70", "ItDa", "", "", 45000, 135000],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0993", "CF-COLDBREW", "Cold Brew Cam Vàng", 2, "S", "70", "ItDa", "", "", 40000, 80000],
+    },
+
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0994", "#094", "TaiBan", "B04", "Bàn 04", "NV-CASHIER", "Lan Anh", "0987654321", "Hoàng Nam", 132000, 0, 132000, "VietQR", null, null, "DaGiao", null, daysAgoISO(5, 120), daysAgoISO(5, 100)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0994", "CF-LATTE", "Latte Hạnh Nhân Nướng", 2, "S", "70", "BinhThuong", "", "", 45000, 90000],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0994", "CF-COLDBREW", "Cold Brew Cam Vàng", 1, "S", "70", "BinhThuong", "", "", 42000, 42000],
+    },
+
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0995", "#095", "MangDi", null, null, "NV-CASHIER", "Lan Anh", null, null, 156000, 0, 156000, "TienMat", 200000, 44000, "DaGiao", null, daysAgoISO(3, 60), daysAgoISO(3, 50)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0995", "TR-DAOCAMSA", "Trà Đào Cam Sả", 4, "S", "70", "ItDa", "", "", 39000, 156000],
+    },
+
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0996", "#096", "TaiBan", "B08", "Bàn 08", "NV-CASHIER", "Lan Anh", "0912345678", "Thu Hà", 175000, 0, 175000, "VietQR", null, null, "DaGiao", null, daysAgoISO(2, 90), daysAgoISO(2, 75)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0996", "CF-BACXIU", "Bạc Xỉu Kem Muối", 3, "S", "70", "BinhThuong", "", "", 35000, 105000],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0996", "BN-TIRAMISU", "Tiramisu Cà Phê Nhỏ", 2, null, null, null, "", "", 35000, 70000],
+    },
+
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0997", "#097", "TaiBan", "B05", "Bàn 05", "NV-CASHIER", "Lan Anh", null, null, 116000, 0, 116000, "TienMat", 120000, 4000, "DaGiao", null, daysAgoISO(1, 140), daysAgoISO(1, 125)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0997", "CF-SUADA", "Cà Phê Phin Sữa Đá", 4, "S", "70", "BinhThuong", "", "", 29000, 116000],
+    },
+
+    // 7B. Đơn hàng mẫu sinh động trong ca hôm nay (đã phục vụ + đã pha xong + đang pha + mới gọi)
     {
       sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: ["ORD-1001", "#101", "MangDi", null, null, "NV-CASHIER", "Lan Anh", "0987654321", "Hoàng Nam", 64000, 0, 64000, "VietQR", null, null, "DaGiao", null, minsAgoISO(95), minsAgoISO(88)],

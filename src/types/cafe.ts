@@ -10,6 +10,7 @@ export type OrderType = "TaiBan" | "MangDi";
 export type PrepStatus = "ChoPha" | "DangPha" | "DaXong" | "DaGiao" | "DaHuy";
 export type PaymentMethod = "TienMat" | "VietQR";
 export type TableStatus = "Trong" | "CoKhach";
+export type RevenuePeriod = "day" | "week" | "month";
 
 export interface StaffMember {
   id: string;
@@ -112,7 +113,19 @@ export interface CafeSettings {
   bankAccountName: string;
 }
 
+export interface RevenueBreakdownBucket {
+  label: string;
+  subLabel: string;
+  revenue: number;
+  cashRevenue: number;
+  vietqrRevenue: number;
+  ordersCount: number;
+  cupsSold: number;
+}
+
 export interface RevenueReportDTO {
+  period: RevenuePeriod;
+  periodLabel: string;
   totalRevenue: number;
   cashRevenue: number;
   vietqrRevenue: number;
@@ -121,6 +134,7 @@ export interface RevenueReportDTO {
   totalCupsSold: number;
   averageOrderValue: number;
   lowStockIngredientsCount: number;
+  breakdown: RevenueBreakdownBucket[];
   topSellingItems: Array<{
     menuItemId: string;
     menuItemName: string;

@@ -14,6 +14,8 @@ import type {
   OrderType,
   PaymentMethod,
   PrepStatus,
+  RevenueBreakdownBucket,
+  RevenuePeriod,
   RevenueReportDTO,
   StaffMember,
   StaffRole,
@@ -467,7 +469,13 @@ export class CafeService {
   async listIngredients(): Promise<Ingredient[]> {
     await ensureCafeDbReady();
     const db = getDbClient();
-    const res = await db.execute("SELECT * FROM cafe_ingredients ORDER BY name ASC");
+    const res = await db.execute(`
+      SELECT * FROM cafe_ingredients
+      ORDER BY
+        CASE WHEN current_stock <= min_stock THEN 0 ELSE 1 END ASC,
+        (current_stock - min_stock) ASC,
+        name ASC
+    `);
     return res.rows.map((r) => ({
       id: String(r.id),
       name: String(r.name),
@@ -476,6 +484,37 @@ export class CafeService {
       minStock: Number(r.min_stock),
       updatedAt: String(r.updated_at),
     }));
+  }
+
+  async createIngredient(input: {
+    name: string;
+    unit: string;
+    currentStock: number;
+    minStock: number;
+  }): Promise<Ingredient[]> {
+    await ensureCafeDbReady();
+    const cleanName = input.name.trim();
+    const cleanUnit = input.unit.trim() || "đơn vị";
+    if (!cleanName) {
+      throw new Error("Vui lòng nhập tên nguyên liệu mới.");
+    }
+    const id = `NL-${Date.now().toString().slice(-5)}`;
+    const nowIso = new Date().toISOString();
+    const db = getDbClient();
+    await db.execute({
+      sql: `INSERT INTO cafe_ingredients (id, name, unit, current_stock, min_stock, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        cleanName,
+        cleanUnit,
+        Math.max(0, Math.round(Number(input.currentStock || 0) * 100) / 100),
+        Math.max(0.5, Math.round(Number(input.minStock || 2) * 100) / 100),
+        nowIso,
+      ],
+    });
+    await persistCafeDbToBlob();
+    return this.listIngredients();
   }
 
   async updateIngredientStock(id: string, delta: number): Promise<Ingredient[]> {
@@ -564,35 +603,61 @@ export class CafeService {
     return updated;
   }
 
-  async getRevenueReport(): Promise<RevenueReportDTO> {
+  async getRevenueReport(period: RevenuePeriod = "day"): Promise<RevenueReportDTO> {
     await ensureCafeDbReady();
     const db = getDbClient();
 
-    const [aggRes, topRes, lowIngRes, recentOrders] = await Promise.all([
-      db.execute(`
-        SELECT
-          COALESCE(SUM(CASE WHEN prep_status != 'DaHuy' THEN total_amount ELSE 0 END), 0) AS total_rev,
-          COALESCE(SUM(CASE WHEN prep_status != 'DaHuy' AND payment_method = 'TienMat' THEN total_amount ELSE 0 END), 0) AS cash_rev,
-          COALESCE(SUM(CASE WHEN prep_status != 'DaHuy' AND payment_method = 'VietQR' THEN total_amount ELSE 0 END), 0) AS qr_rev,
-          SUM(CASE WHEN prep_status != 'DaHuy' THEN 1 ELSE 0 END) AS paid_cnt,
-          SUM(CASE WHEN prep_status = 'DaHuy' THEN 1 ELSE 0 END) AS cancel_cnt
-        FROM cafe_orders
-      `),
-      db.execute(`
-        SELECT
-          oi.menu_item_id,
-          oi.menu_item_name,
-          SUM(oi.quantity) AS qty_sold,
-          SUM(oi.line_total) AS item_rev
-        FROM cafe_order_items oi
-        JOIN cafe_orders o ON o.id = oi.order_id
-        WHERE o.prep_status != 'DaHuy'
-        GROUP BY oi.menu_item_id, oi.menu_item_name
-        ORDER BY qty_sold DESC, item_rev DESC
-        LIMIT 6
-      `),
+    const nowMs = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const cutoffIso =
+      period === "day"
+        ? new Date(nowMs - dayMs).toISOString()
+        : period === "week"
+          ? new Date(nowMs - 7 * dayMs).toISOString()
+          : new Date(nowMs - 30 * dayMs).toISOString();
+
+    const periodLabel =
+      period === "day"
+        ? "Trong ngày (24 giờ qua)"
+        : period === "week"
+          ? "Trong tuần (7 ngày gần nhất)"
+          : "Trong tháng (30 ngày gần nhất)";
+
+    const [aggRes, topRes, lowIngRes, ordersRes] = await Promise.all([
+      db.execute({
+        sql: `
+          SELECT
+            COALESCE(SUM(CASE WHEN prep_status != 'DaHuy' THEN total_amount ELSE 0 END), 0) AS total_rev,
+            COALESCE(SUM(CASE WHEN prep_status != 'DaHuy' AND payment_method = 'TienMat' THEN total_amount ELSE 0 END), 0) AS cash_rev,
+            COALESCE(SUM(CASE WHEN prep_status != 'DaHuy' AND payment_method = 'VietQR' THEN total_amount ELSE 0 END), 0) AS qr_rev,
+            SUM(CASE WHEN prep_status != 'DaHuy' THEN 1 ELSE 0 END) AS paid_cnt,
+            SUM(CASE WHEN prep_status = 'DaHuy' THEN 1 ELSE 0 END) AS cancel_cnt
+          FROM cafe_orders
+          WHERE created_at >= ?
+        `,
+        args: [cutoffIso],
+      }),
+      db.execute({
+        sql: `
+          SELECT
+            oi.menu_item_id,
+            oi.menu_item_name,
+            SUM(oi.quantity) AS qty_sold,
+            SUM(oi.line_total) AS item_rev
+          FROM cafe_order_items oi
+          JOIN cafe_orders o ON o.id = oi.order_id
+          WHERE o.prep_status != 'DaHuy' AND o.created_at >= ?
+          GROUP BY oi.menu_item_id, oi.menu_item_name
+          ORDER BY qty_sold DESC, item_rev DESC
+          LIMIT 6
+        `,
+        args: [cutoffIso],
+      }),
       db.execute("SELECT COUNT(*) AS cnt FROM cafe_ingredients WHERE current_stock <= min_stock"),
-      this.listOrders(undefined, 25),
+      db.execute({
+        sql: "SELECT * FROM cafe_orders WHERE created_at >= ? ORDER BY created_at DESC LIMIT 60",
+        args: [cutoffIso],
+      }),
     ]);
 
     const r0 = aggRes.rows[0] ?? {};
@@ -602,15 +667,42 @@ export class CafeService {
     const paidOrdersCount = Number(r0.paid_cnt ?? 0);
     const cancelledOrdersCount = Number(r0.cancel_cnt ?? 0);
 
-    const cupsRes = await db.execute(`
-      SELECT COALESCE(SUM(oi.quantity), 0) AS total_items
-      FROM cafe_order_items oi
-      JOIN cafe_orders o ON o.id = oi.order_id
-      WHERE o.prep_status != 'DaHuy'
-    `);
+    const cupsRes = await db.execute({
+      sql: `
+        SELECT COALESCE(SUM(oi.quantity), 0) AS total_items
+        FROM cafe_order_items oi
+        JOIN cafe_orders o ON o.id = oi.order_id
+        WHERE o.prep_status != 'DaHuy' AND o.created_at >= ?
+      `,
+      args: [cutoffIso],
+    });
     const totalCupsSold = Number(cupsRes.rows[0]?.total_items ?? 0);
 
+    // Map orders with items
+    let recentOrders: CafeOrder[] = [];
+    if (ordersRes.rows.length > 0) {
+      const ids = ordersRes.rows.map((r) => String(r.id));
+      const iRes = await db.execute({
+        sql: `SELECT * FROM cafe_order_items WHERE order_id IN (${ids.map(() => "?").join(",")})`,
+        args: ids,
+      });
+      const itemsByOrder = new Map<string, Record<string, unknown>[]>();
+      for (const row of iRes.rows) {
+        const oid = String(row.order_id);
+        const list = itemsByOrder.get(oid) ?? [];
+        list.push(row as Record<string, unknown>);
+        itemsByOrder.set(oid, list);
+      }
+      recentOrders = ordersRes.rows.map((r) =>
+        this.mapOrderRow(r, itemsByOrder.get(String(r.id)) ?? [])
+      );
+    }
+
+    const breakdown = this.computePeriodBreakdown(period, recentOrders, nowMs);
+
     return {
+      period,
+      periodLabel,
       totalRevenue,
       cashRevenue,
       vietqrRevenue,
@@ -619,6 +711,7 @@ export class CafeService {
       totalCupsSold,
       averageOrderValue: paidOrdersCount > 0 ? Math.round(totalRevenue / paidOrdersCount) : 0,
       lowStockIngredientsCount: Number(lowIngRes.rows[0]?.cnt ?? 0),
+      breakdown,
       topSellingItems: topRes.rows.map((row) => ({
         menuItemId: String(row.menu_item_id),
         menuItemName: String(row.menu_item_name),
@@ -626,6 +719,96 @@ export class CafeService {
         revenue: Number(row.item_rev),
       })),
       recentOrders,
+    };
+  }
+
+  private computePeriodBreakdown(
+    period: RevenuePeriod,
+    orders: CafeOrder[],
+    nowMs: number
+  ): RevenueBreakdownBucket[] {
+    const validOrders = orders.filter((o) => o.prepStatus !== "DaHuy");
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    if (period === "day") {
+      const shifts: Array<{ label: string; subLabel: string; match: (hr: number) => boolean }> = [
+        { label: "Ca sáng", subLabel: "06:00 – 11:00", match: (h) => h >= 6 && h < 11 },
+        { label: "Ca trưa", subLabel: "11:00 – 14:00", match: (h) => h >= 11 && h < 14 },
+        { label: "Ca chiều", subLabel: "14:00 – 18:00", match: (h) => h >= 14 && h < 18 },
+        { label: "Ca tối & Đêm", subLabel: "18:00 – 06:00", match: (h) => h >= 18 || h < 6 },
+      ];
+      return shifts.map((s) => {
+        const matched = validOrders.filter((o) => {
+          const hr = new Date(o.createdAt).getHours();
+          return s.match(hr);
+        });
+        return this.summarizeBucket(s.label, s.subLabel, matched);
+      });
+    }
+
+    if (period === "week") {
+      const buckets: RevenueBreakdownBucket[] = [];
+      for (let d = 6; d >= 0; d--) {
+        const endMs = nowMs - d * dayMs;
+        const startMs = endMs - dayMs;
+        const dateObj = new Date(endMs);
+        const dateStr = new Intl.DateTimeFormat("vi-VN", {
+          day: "2-digit",
+          month: "2-digit",
+        }).format(dateObj);
+        const label = d === 0 ? "Hôm nay" : d === 1 ? "Hôm qua" : `${d} ngày trước`;
+        const matched = validOrders.filter((o) => {
+          const t = new Date(o.createdAt).getTime();
+          return t > startMs && t <= endMs + (d === 0 ? 60000 : 0);
+        });
+        buckets.push(this.summarizeBucket(label, `Ngày ${dateStr}`, matched));
+      }
+      return buckets;
+    }
+
+    // period === "month": 4 tuần trong 30 ngày gần nhất
+    const weekRanges = [
+      { label: "Tuần 4 (Mới nhất)", subLabel: "7 ngày gần đây", minDays: 0, maxDays: 7 },
+      { label: "Tuần 3", subLabel: "8 – 14 ngày trước", minDays: 7, maxDays: 14 },
+      { label: "Tuần 2", subLabel: "15 – 21 ngày trước", minDays: 14, maxDays: 21 },
+      { label: "Tuần 1", subLabel: "22 – 30 ngày trước", minDays: 21, maxDays: 31 },
+    ];
+    return weekRanges.reverse().map((w) => {
+      const maxMs = nowMs - w.minDays * dayMs + (w.minDays === 0 ? 60000 : 0);
+      const minMs = nowMs - w.maxDays * dayMs;
+      const matched = validOrders.filter((o) => {
+        const t = new Date(o.createdAt).getTime();
+        return t > minMs && t <= maxMs;
+      });
+      return this.summarizeBucket(w.label, w.subLabel, matched);
+    });
+  }
+
+  private summarizeBucket(
+    label: string,
+    subLabel: string,
+    orders: CafeOrder[]
+  ): RevenueBreakdownBucket {
+    let revenue = 0;
+    let cashRevenue = 0;
+    let vietqrRevenue = 0;
+    let cupsSold = 0;
+    for (const o of orders) {
+      revenue += o.totalAmount;
+      if (o.paymentMethod === "TienMat") cashRevenue += o.totalAmount;
+      if (o.paymentMethod === "VietQR") vietqrRevenue += o.totalAmount;
+      for (const it of o.items) {
+        cupsSold += it.quantity;
+      }
+    }
+    return {
+      label,
+      subLabel,
+      revenue,
+      cashRevenue,
+      vietqrRevenue,
+      ordersCount: orders.length,
+      cupsSold,
     };
   }
 

@@ -60,6 +60,13 @@ Break the task into three to seven verifiable phases. Use only `pending`, `in_pr
 - [x] Cải tiến trang `/tables` và `/barista`: cập nhật UI tức thì ngay khi bấm giao nước / dọn bàn, trả dữ liệu mới nhất ngay trong response mutation, và tự động polling mỗi 5 giây + khi focus cửa sổ
 - **Status:** complete
 
+### Phase 7: Nâng cấp Quản lý Kho nguyên liệu ưu tiên, Giá bán phân cách 3 chữ số & Thống kê Doanh thu Ngày/Tuần/Tháng
+
+- [x] Đẩy các nguyên liệu sắp hết (`currentStock <= minStock`) lên đầu danh sách kèm màu sắc cảnh báo nổi bật và hỗ trợ thêm loại nguyên liệu mới vào kho (`/manager/menu`, `CafeService.ts`)
+- [x] Tự động phân cách 3 chữ số cho ô nhập Giá bán khi thêm/sửa món mới (`35.000`) kèm các mức giá chọn nhanh 1 chạm
+- [x] Thống kê chi tiết doanh thu theo **Ngày (4 ca trong ngày)**, **Tuần (7 ngày gần nhất)** và **Tháng (4 tuần trong 30 ngày qua)** tại `/manager/revenue`
+- **Status:** complete
+
 ## Key Questions
 
 1. Quán đơn lẻ hay chuỗi? -> Chọn mô hình 1 quán cafe chuẩn thực tế (12 bàn + Mua mang đi) để tối giản và thân thiện nhất với người dùng phổ thông.
