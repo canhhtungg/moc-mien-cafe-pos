@@ -51,12 +51,11 @@ export function formatTimeVN(iso: string): string {
 export function formatDateTimeVN(iso: string): string {
   try {
     const d = new Date(iso);
-    return new Intl.DateTimeFormat("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-    }).format(d);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    return `${hh}:${min} ${dd}/${mm}`;
   } catch {
     return iso;
   }

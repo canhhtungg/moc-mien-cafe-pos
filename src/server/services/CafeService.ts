@@ -829,15 +829,17 @@ export class CafeService {
     const startIso = new Date(startMs).toISOString();
     const endIso = new Date(endMs + (offset === 0 ? 60000 : 0)).toISOString();
 
-    const fmtDate = (ms: number) =>
-      new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit" }).format(
-        new Date(ms)
-      );
+    const fmtDate = (ms: number) => {
+      const d = new Date(ms);
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      return `${dd}/${mm}`;
+    };
 
     const dateRangeLabel =
       period === "day"
         ? `Ngày ${fmtDate(endMs)}`
-        : `${fmtDate(startMs)} – ${fmtDate(endMs)}`;
+        : `${fmtDate(startMs)} - ${fmtDate(endMs)}`;
 
     const periodLabel =
       period === "day"
@@ -1012,10 +1014,10 @@ export class CafeService {
 
     if (period === "day") {
       const shifts: Array<{ label: string; subLabel: string; match: (hr: number) => boolean }> = [
-        { label: "Ca sáng", subLabel: "06:00 – 11:00", match: (h) => h >= 6 && h < 11 },
-        { label: "Ca trưa", subLabel: "11:00 – 14:00", match: (h) => h >= 11 && h < 14 },
-        { label: "Ca chiều", subLabel: "14:00 – 18:00", match: (h) => h >= 14 && h < 18 },
-        { label: "Ca tối & Đêm", subLabel: "18:00 – 06:00", match: (h) => h >= 18 || h < 6 },
+        { label: "Ca sáng", subLabel: "06:00 - 11:00", match: (h) => h >= 6 && h < 11 },
+        { label: "Ca trưa", subLabel: "11:00 - 14:00", match: (h) => h >= 11 && h < 14 },
+        { label: "Ca chiều", subLabel: "14:00 - 18:00", match: (h) => h >= 14 && h < 18 },
+        { label: "Ca tối & Đêm", subLabel: "18:00 - 06:00", match: (h) => h >= 18 || h < 6 },
       ];
       return shifts.map((s) => {
         const matched = validOrders.filter((o) => {
@@ -1032,10 +1034,9 @@ export class CafeService {
         const endMs = anchorEndMs - d * dayMs;
         const startMs = endMs - dayMs;
         const dateObj = new Date(endMs);
-        const dateStr = new Intl.DateTimeFormat("vi-VN", {
-          day: "2-digit",
-          month: "2-digit",
-        }).format(dateObj);
+        const dateStr = `${String(dateObj.getDate()).padStart(2, "0")}/${String(
+          dateObj.getMonth() + 1
+        ).padStart(2, "0")}`;
         const label = `Ngày ${dateStr}`;
         const subLabel = d === 0 ? "Ngày cuối kỳ" : `Cách ${d} ngày`;
         const matched = validOrders.filter((o) => {
@@ -1049,10 +1050,10 @@ export class CafeService {
 
     // period === "month": 4 tuần trong kỳ 30 ngày đang chọn
     const weekRanges = [
-      { label: "Tuần 4 (Cuối kỳ)", subLabel: "Ngày 23 – 30 của kỳ", minDays: 0, maxDays: 7 },
-      { label: "Tuần 3", subLabel: "Ngày 15 – 22 của kỳ", minDays: 7, maxDays: 14 },
-      { label: "Tuần 2", subLabel: "Ngày 08 – 14 của kỳ", minDays: 14, maxDays: 21 },
-      { label: "Tuần 1 (Đầu kỳ)", subLabel: "Ngày 01 – 07 của kỳ", minDays: 21, maxDays: 31 },
+      { label: "Tuần 4 (Cuối kỳ)", subLabel: "Ngày 23 - 30 của kỳ", minDays: 0, maxDays: 7 },
+      { label: "Tuần 3", subLabel: "Ngày 15 - 22 của kỳ", minDays: 7, maxDays: 14 },
+      { label: "Tuần 2", subLabel: "Ngày 08 - 14 của kỳ", minDays: 14, maxDays: 21 },
+      { label: "Tuần 1 (Đầu kỳ)", subLabel: "Ngày 01 - 07 của kỳ", minDays: 21, maxDays: 31 },
     ];
     return weekRanges.reverse().map((w) => {
       const maxMs = anchorEndMs - w.minDays * dayMs + (w.minDays === 0 ? 60000 : 0);

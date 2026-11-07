@@ -208,6 +208,9 @@ describe("Mộc Miên Café — Nghiệp vụ cốt lõi & Phân quyền chặt 
     expect(dayRep.breakdown).toHaveLength(4);
     expect(weekRep.breakdown).toHaveLength(7);
     expect(monthRep.breakdown).toHaveLength(4);
+    expect(dayRep.dateRangeLabel).toMatch(/^Ngày \d{2}\/\d{2}$/);
+    expect(weekRep.dateRangeLabel).toMatch(/^\d{2}\/\d{2} - \d{2}\/\d{2}$/);
+    expect(monthRep.dateRangeLabel).toMatch(/^\d{2}\/\d{2} - \d{2}\/\d{2}$/);
     expect(yesterdayRep.totalRevenue).toBeGreaterThan(0);
     expect(prevWeekRep.totalRevenue).toBeGreaterThan(0);
     expect(prevMonthRep.totalRevenue).toBeGreaterThan(0);
