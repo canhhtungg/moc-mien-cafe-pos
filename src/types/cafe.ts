@@ -29,6 +29,8 @@ export interface MenuItem {
   isBestSeller: boolean;
   hasSizeOption: boolean;
   hasTempOption: boolean;
+  estimatedMaxCups?: number;
+  limitingIngredientName?: string;
 }
 
 export interface ToppingOption {
@@ -53,6 +55,7 @@ export interface Ingredient {
   currentStock: number;
   minStock: number;
   updatedAt: string;
+  estimatedCupsRemaining?: number;
 }
 
 export interface LoyalCustomer {
@@ -123,9 +126,21 @@ export interface RevenueBreakdownBucket {
   cupsSold: number;
 }
 
+export interface IngredientUsageStat {
+  ingredientId: string;
+  ingredientName: string;
+  unit: string;
+  usedAmount: number;
+  currentStock: number;
+  minStock: number;
+  recommendation: string;
+}
+
 export interface RevenueReportDTO {
   period: RevenuePeriod;
+  offset: number;
   periodLabel: string;
+  dateRangeLabel: string;
   totalRevenue: number;
   cashRevenue: number;
   vietqrRevenue: number;
@@ -135,6 +150,7 @@ export interface RevenueReportDTO {
   averageOrderValue: number;
   lowStockIngredientsCount: number;
   breakdown: RevenueBreakdownBucket[];
+  ingredientUsage: IngredientUsageStat[];
   topSellingItems: Array<{
     menuItemId: string;
     menuItemName: string;

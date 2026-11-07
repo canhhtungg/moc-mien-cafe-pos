@@ -126,15 +126,54 @@ describe("Mộc Miên Café — Nghiệp vụ cốt lõi & Phân quyền chặt 
     expect(activeOrdersAfterClear.some((o) => o.id === created.id)).toBe(false);
   });
 
-  it("sinh mã VietQR động đúng chuẩn EMVCo CRC16 chứa sẵn số tiền đơn cafe", async () => {
+  it("sinh mã VietQR động đúng chuẩn EMVCo CRC16 chứa sẵn số tiền và STK 0336606699 - TO CANH TUNG", async () => {
     const qrSvc = new VietQRService();
     const qr = await qrSvc.generateCafeQR({ amount: 75000, note: "Ban 05 thanh toan" });
+    expect(qr.accountNo).toBe("0336606699");
+    expect(qr.accountName).toBe("TO CANH TUNG");
     expect(qr.payload).toContain("540575000");
+    expect(qr.payload).toContain("0336606699");
     expect(qr.payload).toMatch(/6304[0-9A-F]{4}$/);
     expect(qr.qrDataUrl.startsWith("data:image/png;base64,")).toBe(true);
   });
 
-  it("ưu tiên nguyên liệu sắp hết lên đầu danh sách, thêm nguyên liệu mới, tách 3 số giá bán và thống kê doanh thu Ngày/Tuần/Tháng", async () => {
+  it("ước tính số cốc còn lại từ nguyên liệu, trừ số cốc khi tạo/làm đơn và chặn đơn vượt quá nguyên liệu", async () => {
+    const svc = new CafeService();
+    const bootBefore = await svc.getBootstrap();
+    expect(bootBefore.shopInfo.shopName).toBe("Lặng. Café");
+
+    // Trà Đào Cam Sả dùng Đào ngâm (2 hộp, mỗi hộp 6 cốc -> ban đầu còn 12 cốc)
+    const traDaoBefore = bootBefore.menu.find((m) => m.id === "TR-DAOCAMSA");
+    expect(traDaoBefore?.estimatedMaxCups).toBe(12);
+
+    // Chặn đơn gọi vượt quá số lượng nguyên liệu hiện có (ví dụ gọi 15 cốc > 12 cốc)
+    await expect(
+      svc.createOrder({
+        orderType: "MangDi",
+        staffId: "NV-CASHIER",
+        staffName: "Lan Anh",
+        paymentMethod: "TienMat",
+        cashReceived: 900000,
+        items: [{ menuItemId: "TR-DAOCAMSA", quantity: 15 }],
+      })
+    ).rejects.toThrow(/Không đủ nguyên liệu/);
+
+    // Gọi 3 cốc hợp lệ -> số cốc ước tính giảm từ 12 xuống 9 cốc
+    await svc.createOrder({
+      orderType: "MangDi",
+      staffId: "NV-CASHIER",
+      staffName: "Lan Anh",
+      paymentMethod: "TienMat",
+      cashReceived: 200000,
+      items: [{ menuItemId: "TR-DAOCAMSA", quantity: 3 }],
+    });
+
+    const bootAfter = await svc.getBootstrap();
+    const traDaoAfter = bootAfter.menu.find((m) => m.id === "TR-DAOCAMSA");
+    expect(traDaoAfter?.estimatedMaxCups).toBe(9);
+  });
+
+  it("ưu tiên nguyên liệu sắp hết lên đầu danh sách, thêm nguyên liệu mới, tách 3 số giá bán và xem lại thống kê các ngày/tuần/tháng trước", async () => {
     const svc = new CafeService();
 
     // 1. Nguyên liệu sắp hết luôn đứng đầu danh sách
@@ -158,15 +197,20 @@ describe("Mộc Miên Café — Nghiệp vụ cốt lõi & Phân quyền chặt 
     expect(formatThousandDigits("125000")).toBe("125.000");
     expect(parseThousandDigits("35.000")).toBe(35000);
 
-    // 3. Thống kê doanh thu theo Ngày / Tuần / Tháng
-    const dayRep = await svc.getRevenueReport("day");
-    const weekRep = await svc.getRevenueReport("week");
-    const monthRep = await svc.getRevenueReport("month");
+    // 3. Thống kê doanh thu theo Ngày / Tuần / Tháng & xem lại các kỳ trước (offset = 1)
+    const dayRep = await svc.getRevenueReport("day", 0);
+    const yesterdayRep = await svc.getRevenueReport("day", 1);
+    const weekRep = await svc.getRevenueReport("week", 0);
+    const prevWeekRep = await svc.getRevenueReport("week", 1);
+    const monthRep = await svc.getRevenueReport("month", 0);
+    const prevMonthRep = await svc.getRevenueReport("month", 1);
 
-    expect(dayRep.breakdown).toHaveLength(4); // 4 ca trong ngày
-    expect(weekRep.breakdown).toHaveLength(7); // 7 ngày trong tuần
-    expect(monthRep.breakdown).toHaveLength(4); // 4 tuần trong tháng
-    expect(weekRep.totalRevenue).toBeGreaterThan(dayRep.totalRevenue);
-    expect(monthRep.totalRevenue).toBeGreaterThan(weekRep.totalRevenue);
+    expect(dayRep.breakdown).toHaveLength(4);
+    expect(weekRep.breakdown).toHaveLength(7);
+    expect(monthRep.breakdown).toHaveLength(4);
+    expect(yesterdayRep.totalRevenue).toBeGreaterThan(0);
+    expect(prevWeekRep.totalRevenue).toBeGreaterThan(0);
+    expect(prevMonthRep.totalRevenue).toBeGreaterThan(0);
+    expect(monthRep.ingredientUsage.length).toBeGreaterThanOrEqual(6);
   });
 });

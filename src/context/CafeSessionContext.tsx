@@ -33,11 +33,11 @@ const DEFAULT_STAFF_LIST: StaffMember[] = [
 ];
 
 const DEFAULT_SHOP_INFO: ShopPublicInfo = {
-  shopName: "Mộc Miên Café",
+  shopName: "Lặng. Café",
   address: "28 Ngõ Nhỏ Phố Cổ, Hoàn Kiếm, Hà Nội",
-  wifiName: "MocMien_Cafe",
+  wifiName: "Lang_Cafe",
   wifiPassword: "henmotngayvui",
-  receiptFooter: "Cảm ơn bạn đã ghé Mộc Miên hôm nay. Chúc bạn một ngày thật êm!",
+  receiptFooter: "Một khoảng lặng thơm mùi cà phê mới rang. Cảm ơn bạn đã ghé Lặng hôm nay!",
 };
 
 const CafeSessionContext = createContext<CafeSessionValue>({

@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { CheckCircle2, Printer, Wifi, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { CheckCircle2, Printer, Sparkles, Wifi, X, Zap } from "lucide-react";
 import { formatDateTimeVN, formatVND, ICE_OPTIONS, SUGAR_OPTIONS } from "@/lib/format";
 import type { CafeOrder } from "@/types/cafe";
 
@@ -23,18 +23,29 @@ export function CafeVietQRModal({
   qr: QRModalData;
   submitting: boolean;
   onClose: () => void;
-  onConfirmPaid: () => void;
+  onConfirmPaid: (shouldAutoPrint: boolean) => void;
 }) {
+  const [autoPrintOnSuccess, setAutoPrintOnSuccess] = useState(true);
+  const [simulatingBankWebhook, setSimulatingBankWebhook] = useState(false);
+
+  const handleSimulateBankWebhook = () => {
+    setSimulatingBankWebhook(true);
+    setTimeout(() => {
+      setSimulatingBankWebhook(false);
+      onConfirmPaid(autoPrintOnSuccess);
+    }, 1200);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#2D1E17]/45 backdrop-blur-[2px] flex items-center justify-center p-4">
-      <div className="bg-[#FFFDF9] rounded-3xl border border-[#E6D9CB] w-full max-w-md p-6 space-y-5 shadow-xl text-center">
+    <div className="fixed inset-0 z-50 bg-[#2D1E17]/45 backdrop-blur-[2px] flex items-center justify-center p-4 no-print">
+      <div className="bg-[#FFFDF9] rounded-3xl border border-[#E6D9CB] w-full max-w-md p-6 space-y-4 shadow-xl text-center">
         <div className="flex items-center justify-between">
           <div className="text-left">
             <h2 className="font-serif-cafe text-xl font-semibold text-[#2D1E17]">
               Mời khách quét mã VietQR
             </h2>
             <p className="text-xs text-[#786254]">
-              Số tiền đã được điền sẵn tự động, khách không cần nhập tay
+              Số tiền &amp; nội dung chuyển khoản đã điền sẵn tự động
             </p>
           </div>
           <button
@@ -46,16 +57,16 @@ export function CafeVietQRModal({
           </button>
         </div>
 
-        <div className="inline-block p-4 rounded-3xl bg-white border-2 border-[#8C5A3C]/30 shadow-xs">
+        <div className="inline-block p-3.5 rounded-3xl bg-white border-2 border-[#8C5A3C]/30 shadow-xs">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={qr.qrDataUrl}
             alt="Mã thanh toán VietQR quán cafe"
-            className="w-56 h-56 object-contain mx-auto"
+            className="w-52 h-52 object-contain mx-auto"
           />
         </div>
 
-        <div className="bg-[#F7F1EA] rounded-2xl p-4 text-sm space-y-1.5 text-left border border-[#E6D9CB]">
+        <div className="bg-[#F7F1EA] rounded-2xl p-3.5 text-sm space-y-1.5 text-left border border-[#E6D9CB]">
           <div className="flex justify-between">
             <span className="text-[#786254]">Cần thanh toán:</span>
             <strong className="text-lg text-[#8C5A3C] tabular-nums">{formatVND(qr.amount)}</strong>
@@ -70,15 +81,40 @@ export function CafeVietQRModal({
           </div>
         </div>
 
-        <button
-          type="button"
-          disabled={submitting}
-          onClick={onConfirmPaid}
-          className="w-full py-3.5 px-5 rounded-2xl bg-[#2F6B4F] hover:bg-[#24553E] disabled:opacity-50 text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <CheckCircle2 className="w-5 h-5" />
-          {submitting ? "Đang gửi sang quầy pha chế..." : "Khách đã chuyển khoản xong"}
-        </button>
+        {/* Auto-Print Option */}
+        <label className="flex items-center justify-center gap-2 text-xs font-semibold text-[#5C4638] cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoPrintOnSuccess}
+            onChange={(e) => setAutoPrintOnSuccess(e.target.checked)}
+            className="rounded accent-[#8C5A3C]"
+          />
+          <span>Tự động in 1 phiếu hóa đơn đưa khách ngay khi nhận tiền</span>
+        </label>
+
+        <div className="space-y-2">
+          <button
+            type="button"
+            disabled={submitting || simulatingBankWebhook}
+            onClick={handleSimulateBankWebhook}
+            className="w-full py-3 px-4 rounded-2xl bg-[#8C5A3C] hover:bg-[#73472D] disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Zap className="w-4 h-4" />
+            {simulatingBankWebhook
+              ? "Đang nhận tín hiệu ting-ting từ Ngân hàng..."
+              : "Giả lập khách vừa quét xong (Tự động hoàn tất & In 1 phiếu)"}
+          </button>
+
+          <button
+            type="button"
+            disabled={submitting || simulatingBankWebhook}
+            onClick={() => onConfirmPaid(autoPrintOnSuccess)}
+            className="w-full py-3 px-4 rounded-2xl bg-[#2F6B4F] hover:bg-[#24553E] disabled:opacity-50 text-white text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <CheckCircle2 className="w-5 h-5" />
+            {submitting ? "Đang gửi sang quầy pha chế..." : "Xác nhận khách đã chuyển khoản xong"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -87,6 +123,7 @@ export function CafeVietQRModal({
 export function CafeReceiptModal({
   order,
   shopInfo,
+  autoPrint = false,
   onClose,
 }: {
   order: CafeOrder;
@@ -97,15 +134,30 @@ export function CafeReceiptModal({
     wifiPassword: string;
     receiptFooter: string;
   };
+  autoPrint?: boolean;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    if (!autoPrint) return;
+    const timer = setTimeout(() => {
+      window.print();
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [autoPrint]);
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#2D1E17]/45 backdrop-blur-[2px] flex items-center justify-center p-4">
-      <div className="bg-[#FFFDF9] rounded-3xl border border-[#E6D9CB] w-full max-w-md p-6 space-y-4 shadow-xl">
-        <div className="flex items-center justify-between">
+    <div
+      id="printable-cafe-receipt-backdrop"
+      className="fixed inset-0 z-50 bg-[#2D1E17]/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+    >
+      <div
+        id="printable-cafe-receipt-card"
+        className="bg-[#FFFDF9] rounded-3xl border border-[#E6D9CB] w-full max-w-md p-6 space-y-4 shadow-xl"
+      >
+        <div className="flex items-center justify-between no-print">
           <div className="flex items-center gap-2 text-[#2F6B4F] font-semibold text-sm">
             <CheckCircle2 className="w-5 h-5" />
-            Đã chuyển phiếu sang quầy pha chế!
+            Đã chuyển phiếu sang quầy pha chế! (Chỉ in 1 phiếu đưa khách)
           </div>
           <button
             type="button"
@@ -116,7 +168,7 @@ export function CafeReceiptModal({
           </button>
         </div>
 
-        {/* Printable Ticket */}
+        {/* Single Printable Ticket for Customer */}
         <div
           id="printable-cafe-receipt"
           className="bg-white rounded-2xl border border-[#E5D8C9] p-5 text-xs text-[#2D1E17] space-y-3"
@@ -125,7 +177,7 @@ export function CafeReceiptModal({
             <div className="font-serif-cafe text-lg font-semibold">{shopInfo.shopName}</div>
             <div className="text-[#786254]">{shopInfo.address}</div>
             <div className="mt-2 inline-block px-3 py-1 rounded-full bg-[#F2E9DF] font-bold text-sm">
-              Số phiếu: {order.orderNumber} —{" "}
+              Phiếu khách: {order.orderNumber} —{" "}
               {order.orderType === "TaiBan" ? order.tableName : "Mua mang đi"}
             </div>
             <div className="text-[#786254] mt-1">
@@ -199,20 +251,21 @@ export function CafeReceiptModal({
           )}
         </div>
 
-        <div className="flex gap-2.5">
+        <div className="flex gap-2.5 no-print">
           <button
             type="button"
             onClick={() => window.print()}
             className="flex-1 py-3 px-4 rounded-2xl border border-[#D8C7B5] bg-white hover:bg-[#F7F1EA] text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            In phiếu
+            In 1 phiếu đưa khách
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-3 px-4 rounded-2xl bg-[#8C5A3C] hover:bg-[#73472D] text-white text-sm font-semibold cursor-pointer"
+            className="flex-1 py-3 px-4 rounded-2xl bg-[#8C5A3C] hover:bg-[#73472D] text-white text-sm font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer"
           >
+            <Sparkles className="w-4 h-4" />
             Gọi đơn mới
           </button>
         </div>

@@ -10,9 +10,11 @@ import {
   QrCode,
   Search,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Utensils,
+  X,
 } from "lucide-react";
 import { useCafeSession } from "@/context/CafeSessionContext";
 import { DrinkCustomizeModal } from "@/components/DrinkCustomizeModal";
@@ -25,6 +27,7 @@ import {
   CATEGORY_LABELS,
   formatVND,
   ICE_OPTIONS,
+  normalizeSearchVN,
   SUGAR_OPTIONS,
 } from "@/lib/format";
 import type {
@@ -85,14 +88,36 @@ export default function OrderPage() {
   // Payment & Receipt Modals
   const [qrModal, setQrModal] = useState<QRModalData | null>(null);
   const [completedOrder, setCompletedOrder] = useState<CafeOrder | null>(null);
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Tổng số cốc của từng món đang nằm trong giỏ hiện tại
+  const cartQtyByItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const line of cart) {
+      map.set(line.menuItem.id, (map.get(line.menuItem.id) ?? 0) + line.quantity);
+    }
+    return map;
+  }, [cart]);
+
+  const getRemainingCupsForItem = (item: MenuItem): number => {
+    const maxFromStock = item.estimatedMaxCups ?? 99;
+    const inCart = cartQtyByItemId.get(item.id) ?? 0;
+    return Math.max(0, maxFromStock - inCart);
+  };
+
   const filteredMenu = useMemo(() => {
+    const normalizedQuery = normalizeSearchVN(searchText);
     return menu.filter((item) => {
       if (selectedCategory !== "ALL" && item.category !== selectedCategory) return false;
-      if (searchText.trim()) {
-        return item.name.toLowerCase().includes(searchText.trim().toLowerCase());
+      if (normalizedQuery) {
+        const normalizedName = normalizeSearchVN(item.name);
+        const normalizedCat = normalizeSearchVN(CATEGORY_LABELS[item.category]);
+        return (
+          normalizedName.includes(normalizedQuery) ||
+          normalizedCat.includes(normalizedQuery)
+        );
       }
       return true;
     });
@@ -112,40 +137,70 @@ export default function OrderPage() {
   const effectiveCash = cashGiven !== null && cashGiven >= totalAmount ? cashGiven : totalAmount;
   const changeAmount = Math.max(0, effectiveCash - totalAmount);
 
-  const handleTapMenuCard = (item: MenuItem) => {
-    if (!item.isAvailable) return;
-    // Nếu là bánh ngọt không cần chọn đá/size -> thêm 1 chạm thật nhanh!
-    if (!item.hasSizeOption && !item.hasTempOption) {
-      setCart((prev) => {
-        const existingIdx = prev.findIndex(
-          (x) => x.menuItem.id === item.id && !x.itemNote && x.toppingIds.length === 0
-        );
-        if (existingIdx >= 0) {
-          const copy = [...prev];
-          copy[existingIdx] = {
-            ...copy[existingIdx],
-            quantity: copy[existingIdx].quantity + 1,
-          };
-          return copy;
-        }
-        return [
-          ...prev,
-          {
-            uid: `${item.id}-${Date.now()}`,
-            menuItem: item,
-            quantity: 1,
-            cupSize: null,
-            sugarLevel: null,
-            iceLevel: null,
-            toppingIds: [],
-            toppingsText: "",
-            itemNote: "",
-            unitPrice: item.basePrice,
-          },
-        ];
-      });
+  // Thêm nhanh 1 chạm (dành cho nhân viên thao tác tốc độ cao)
+  const handleQuickAddOne = (item: MenuItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const remaining = getRemainingCupsForItem(item);
+    if (!item.isAvailable || remaining <= 0) {
+      setErrorMsg(
+        `Món "${item.name}" đã chạm giới hạn nguyên liệu trong kho (${item.estimatedMaxCups ?? 0} cốc).`
+      );
       return;
     }
+    setErrorMsg(null);
+    const defaultSize: CupSize | null = item.hasSizeOption ? "S" : null;
+    const defaultSugar: SugarLevel | null = item.hasTempOption ? "70" : null;
+    const defaultIce: IceLevel | null = item.hasTempOption ? "BinhThuong" : null;
+
+    setCart((prev) => {
+      const existingIdx = prev.findIndex(
+        (x) =>
+          x.menuItem.id === item.id &&
+          x.cupSize === defaultSize &&
+          x.sugarLevel === defaultSugar &&
+          x.iceLevel === defaultIce &&
+          !x.itemNote &&
+          x.toppingIds.length === 0
+      );
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = {
+          ...copy[existingIdx],
+          quantity: copy[existingIdx].quantity + 1,
+        };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          uid: `${item.id}-${Date.now()}`,
+          menuItem: item,
+          quantity: 1,
+          cupSize: defaultSize,
+          sugarLevel: defaultSugar,
+          iceLevel: defaultIce,
+          toppingIds: [],
+          toppingsText: "",
+          itemNote: "",
+          unitPrice: item.basePrice,
+        },
+      ];
+    });
+  };
+
+  const handleOpenCustomize = (item: MenuItem) => {
+    const remaining = getRemainingCupsForItem(item);
+    if (!item.isAvailable || remaining <= 0) {
+      setErrorMsg(
+        `Món "${item.name}" hiện chỉ còn đủ nguyên liệu cho tối đa ${item.estimatedMaxCups ?? 0} cốc.`
+      );
+      return;
+    }
+    if (!item.hasSizeOption && !item.hasTempOption) {
+      handleQuickAddOne(item);
+      return;
+    }
+    setErrorMsg(null);
     setCustomizingItem(item);
   };
 
@@ -179,7 +234,10 @@ export default function OrderPage() {
     setErrorMsg(null);
   };
 
-  const submitOrder = async (paymentMethod: "TienMat" | "VietQR") => {
+  const submitOrder = async (
+    paymentMethod: "TienMat" | "VietQR",
+    shouldAutoPrint = false
+  ) => {
     if (cart.length === 0) {
       setErrorMsg("Bạn hãy chạm chọn ít nhất 1 món vào phiếu trước nhé.");
       return;
@@ -220,6 +278,7 @@ export default function OrderPage() {
       if (!res.ok) {
         setErrorMsg(data.error ?? "Không thể lưu đơn hàng.");
       } else {
+        setAutoPrintReceipt(shouldAutoPrint);
         setCompletedOrder(data.order);
         resetTicket();
         await refreshBootstrap();
@@ -236,7 +295,7 @@ export default function OrderPage() {
     }
     setErrorMsg(null);
     const noteLabel =
-      orderType === "TaiBan" ? `MocMien ${selectedTableId}` : "MocMien MangDi";
+      orderType === "TaiBan" ? `LangCafe ${selectedTableId}` : "LangCafe MangDi";
     const res = await roleFetch("/api/vietqr", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -251,117 +310,158 @@ export default function OrderPage() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-      {/* LEFT: Simple Visual Menu (7 cols) */}
-      <section className="lg:col-span-7 space-y-4">
-        {/* Search + Category Pills */}
-        <div className="bg-white rounded-3xl border border-[#E6D9CB] p-4 space-y-3 shadow-2xs">
-          <div className="relative">
-            <Search className="w-4 h-4 text-[#8C5A3C] absolute left-4 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Tìm nhanh món khách gọi (ví dụ: bạc xỉu, trà đào, bánh sừng bò...)"
-              className="w-full pl-11 pr-4 py-2.5 rounded-2xl bg-[#FAF6F1] border border-[#E5D8C9] text-sm text-[#2D1E17] placeholder:text-[#9A8475]"
-            />
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* LEFT: Compact Fast Staff POS Menu Grid (7 cols - No vertical scroll needed) */}
+      <section className="lg:col-span-7 space-y-3">
+        {/* Fast Search + Compact Category Tabs */}
+        <div className="bg-white rounded-3xl border border-[#E6D9CB] p-3.5 space-y-2.5 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-[#8C5A3C] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Gõ nhanh tên món (không cần dấu: bac xiu, tra dao, suada, matcha...)"
+                className="w-full pl-10 pr-9 py-2 rounded-2xl bg-[#FAF6F1] border border-[#E5D8C9] text-sm text-[#2D1E17] placeholder:text-[#9A8475]"
+              />
+              {searchText && (
+                <button
+                  type="button"
+                  onClick={() => setSearchText("")}
+                  aria-label="Xóa tìm kiếm"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-[#786254] hover:bg-[#EFE6DC] cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedCategory("ALL")}
-              className={`px-4 py-2 rounded-2xl text-sm font-semibold cursor-pointer transition-colors ${
-                selectedCategory === "ALL"
-                  ? "bg-[#8C5A3C] text-white"
-                  : "bg-[#F2E9DF] text-[#5C4638] hover:bg-[#E7DACB]"
-              }`}
-            >
-              Tất cả món
-            </button>
-            {(Object.keys(CATEGORY_LABELS) as CategoryId[]).map((cat) => (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1.5">
               <button
-                key={cat}
                 type="button"
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-2 rounded-2xl text-sm font-semibold cursor-pointer transition-colors ${
-                  selectedCategory === cat
+                onClick={() => setSelectedCategory("ALL")}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                  selectedCategory === "ALL"
                     ? "bg-[#8C5A3C] text-white"
                     : "bg-[#F2E9DF] text-[#5C4638] hover:bg-[#E7DACB]"
                 }`}
               >
-                {CATEGORY_LABELS[cat]}
+                Tất cả ({menu.length})
               </button>
-            ))}
+              {(Object.keys(CATEGORY_LABELS) as CategoryId[]).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                    selectedCategory === cat
+                      ? "bg-[#8C5A3C] text-white"
+                      : "bg-[#F2E9DF] text-[#5C4638] hover:bg-[#E7DACB]"
+                  }`}
+                >
+                  {CATEGORY_LABELS[cat]}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11px] text-[#786254] hidden sm:inline">
+              Bấm <strong>+1 Nhanh</strong> (mặc định) hoặc chạm tên món để đổi cỡ/đá
+            </span>
           </div>
         </div>
 
-        {/* Menu Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        {/* 3-Column Compact Staff POS Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {filteredMenu.map((item) => {
-            const soldOut = !item.isAvailable;
+            const remainingCups = getRemainingCupsForItem(item);
+            const soldOut = !item.isAvailable || remainingCups <= 0;
+            const lowCups = !soldOut && remainingCups <= 12;
+            const inCartQty = cartQtyByItemId.get(item.id) ?? 0;
+
             return (
-              <button
+              <div
                 key={item.id}
-                type="button"
-                disabled={soldOut}
-                onClick={() => handleTapMenuCard(item)}
-                className={`text-left rounded-3xl border p-4 transition-all flex flex-col justify-between gap-3 ${
+                onClick={() => !soldOut && handleOpenCustomize(item)}
+                className={`rounded-2xl border p-3 transition-all flex flex-col justify-between gap-2.5 select-none ${
                   soldOut
-                    ? "bg-[#F3EFEA] border-[#E2D8CE] opacity-65 cursor-not-allowed"
-                    : "bg-white border-[#E6D9CB] hover:border-[#8C5A3C] hover:shadow-sm cursor-pointer active:scale-[0.99]"
+                    ? "bg-[#F3EFEA] border-[#E2D8CE] opacity-60 cursor-not-allowed"
+                    : "bg-white border-[#E6D9CB] hover:border-[#8C5A3C] hover:shadow-xs cursor-pointer"
                 }`}
               >
-                <div className="space-y-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-base font-bold text-[#2D1E17] leading-snug">
+                <div className="space-y-1">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <span className="text-sm font-bold text-[#2D1E17] leading-snug line-clamp-2">
                       {item.name}
                     </span>
-                    {soldOut ? (
-                      <span className="shrink-0 px-2.5 py-0.5 rounded-full bg-[#FCEBE8] text-[#9E3526] text-xs font-semibold">
-                        Tạm hết
+                    {inCartQty > 0 ? (
+                      <span className="shrink-0 px-2 py-0.5 rounded-full bg-[#8C5A3C] text-white text-[11px] font-bold tabular-nums">
+                        Đang chọn {inCartQty}
                       </span>
-                    ) : (
-                      item.isBestSeller && (
-                        <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F5E9DC] text-[#8C5A3C] text-xs font-semibold">
-                          <Sparkles className="w-3 h-3" />
-                          Được thích
-                        </span>
-                      )
-                    )}
+                    ) : item.isBestSeller && !soldOut ? (
+                      <Sparkles className="w-3.5 h-3.5 text-[#8C5A3C] shrink-0 mt-0.5" />
+                    ) : null}
                   </div>
-                  <p className="text-xs text-[#786254] line-clamp-2 leading-relaxed">
-                    {item.description}
-                  </p>
+
+                  {/* Estimated Cups Remaining Badge */}
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-sm font-bold text-[#8C5A3C] tabular-nums">
+                      {formatVND(item.basePrice)}
+                    </span>
+                    <span
+                      className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg tabular-nums ${
+                        soldOut
+                          ? "bg-[#FCEBE8] text-[#9E3526]"
+                          : lowCups
+                            ? "bg-[#FDF2EA] text-[#B8431E] border border-[#E7B594]"
+                            : "bg-[#E6F2EC] text-[#23583E]"
+                      }`}
+                    >
+                      {soldOut ? "Hết NL" : `Còn ~${remainingCups} cốc`}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-[#F2E9DF]">
-                  <span className="text-base font-bold text-[#8C5A3C] tabular-nums">
-                    {formatVND(item.basePrice)}
-                  </span>
-                  <span className="text-xs font-semibold text-[#5C4638] bg-[#FAF6F1] px-3 py-1 rounded-xl border border-[#E6D9CB]">
-                    {soldOut
-                      ? "Quầy báo hết"
-                      : item.hasSizeOption || item.hasTempOption
-                        ? "+ Chọn cỡ / đá"
-                        : "+ Thêm ngay"}
-                  </span>
+                {/* Staff Action Row: 1-Click Fast Default Add + Customize */}
+                <div className="flex items-center gap-1.5 pt-1.5 border-t border-[#F4ECE3]">
+                  <button
+                    type="button"
+                    disabled={soldOut}
+                    onClick={(e) => handleQuickAddOne(item, e)}
+                    className="flex-1 py-1.5 px-2 rounded-xl bg-[#FAF6F1] hover:bg-[#8C5A3C] hover:text-white border border-[#E5D8C9] text-xs font-bold text-[#2D1E17] transition-colors cursor-pointer disabled:pointer-events-none"
+                  >
+                    +1 Nhanh
+                  </button>
+                  {(item.hasSizeOption || item.hasTempOption) && !soldOut && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenCustomize(item);
+                      }}
+                      title="Chọn cỡ ly / đường / đá / topping"
+                      className="p-1.5 rounded-xl bg-[#F2E9DF] hover:bg-[#E5D7C8] text-[#5C4638] cursor-pointer"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
       </section>
 
       {/* RIGHT: Tactile Cafe Paper Order Slip (5 cols) */}
-      <aside className="lg:col-span-5 bg-white rounded-3xl border border-[#E6D9CB] p-5 shadow-xs space-y-4 lg:sticky lg:top-24">
-        <div className="flex items-center justify-between border-b border-[#EFE6DC] pb-3">
+      <aside className="lg:col-span-5 bg-white rounded-3xl border border-[#E6D9CB] p-4 sm:p-5 shadow-xs space-y-3.5 lg:sticky lg:top-20">
+        <div className="flex items-center justify-between border-b border-[#EFE6DC] pb-2.5">
           <div>
-            <h2 className="font-serif-cafe text-xl font-semibold text-[#2D1E17]">
+            <h2 className="font-serif-cafe text-lg font-semibold text-[#2D1E17]">
               Phiếu gọi món
             </h2>
             <p className="text-xs text-[#786254]">
-              Chạm món bên trái để thêm — gửi thẳng tới màn hình Pha chế
+              Tự động kiểm tra số cốc theo lượng nguyên liệu trong kho
             </p>
           </div>
           {cart.length > 0 && (
@@ -370,36 +470,36 @@ export default function OrderPage() {
               onClick={resetTicket}
               className="text-xs text-[#9E3526] hover:underline font-medium cursor-pointer"
             >
-              Làm mới phiếu
+              Xóa phiếu
             </button>
           )}
         </div>
 
         {/* Step 1: Dine-in vs Takeaway */}
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#F2E9DF]">
             <button
               type="button"
               onClick={() => setOrderType("TaiBan")}
-              className={`py-2.5 px-3 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-2 px-3 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer ${
                 orderType === "TaiBan"
                   ? "bg-white text-[#2D1E17] shadow-2xs"
                   : "text-[#6E5849]"
               }`}
             >
-              <Utensils className="w-4 h-4 text-[#8C5A3C]" />
+              <Utensils className="w-3.5 h-3.5 text-[#8C5A3C]" />
               Ngồi tại quán
             </button>
             <button
               type="button"
               onClick={() => setOrderType("MangDi")}
-              className={`py-2.5 px-3 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-2 px-3 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer ${
                 orderType === "MangDi"
                   ? "bg-white text-[#2D1E17] shadow-2xs"
                   : "text-[#6E5849]"
               }`}
             >
-              <ShoppingBag className="w-4 h-4 text-[#8C5A3C]" />
+              <ShoppingBag className="w-3.5 h-3.5 text-[#8C5A3C]" />
               Mua mang đi
             </button>
           </div>
@@ -414,7 +514,7 @@ export default function OrderPage() {
                     key={t.id}
                     type="button"
                     onClick={() => setSelectedTableId(t.id)}
-                    className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                    className={`py-1.5 px-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                       selected
                         ? "bg-[#8C5A3C] text-white border-[#8C5A3C]"
                         : busy
@@ -434,10 +534,10 @@ export default function OrderPage() {
         </div>
 
         {/* Cart Items List */}
-        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
           {cart.length === 0 ? (
-            <div className="py-8 px-4 text-center rounded-2xl bg-[#FAF6F1] border border-dashed border-[#DFD2C3] text-sm text-[#786254]">
-              Chưa có món nào trên phiếu. Bạn hãy chạm chọn đồ uống hoặc bánh ở bên trái nhé.
+            <div className="py-6 px-4 text-center rounded-2xl bg-[#FAF6F1] border border-dashed border-[#DFD2C3] text-xs text-[#786254]">
+              Chưa có món nào trên phiếu. Bấm <strong>+1 Nhanh</strong> hoặc chạm vào món ở bên trái để chọn.
             </div>
           ) : (
             cart.map((line) => {
@@ -447,13 +547,15 @@ export default function OrderPage() {
               const iceTxt = line.iceLevel
                 ? ICE_OPTIONS.find((i) => i.value === line.iceLevel)?.label
                 : null;
+              const remainingForMore = getRemainingCupsForItem(line.menuItem);
+
               return (
                 <div
                   key={line.uid}
-                  className="p-3 rounded-2xl bg-[#FAF6F1] border border-[#E6D9CB] flex items-start justify-between gap-2"
+                  className="p-2.5 rounded-2xl bg-[#FAF6F1] border border-[#E6D9CB] flex items-start justify-between gap-2"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-sm text-[#2D1E17]">
+                    <div className="font-semibold text-xs sm:text-sm text-[#2D1E17]">
                       {line.menuItem.name}{" "}
                       {line.cupSize && (
                         <span className="text-xs font-bold text-[#8C5A3C]">
@@ -462,13 +564,13 @@ export default function OrderPage() {
                       )}
                     </div>
                     {(sugarTxt || iceTxt || line.toppingsText || line.itemNote) && (
-                      <div className="text-xs text-[#786254] mt-0.5">
+                      <div className="text-[11px] text-[#786254] mt-0.5">
                         {[sugarTxt, iceTxt, line.toppingsText, line.itemNote]
                           .filter(Boolean)
                           .join(" • ")}
                       </div>
                     )}
-                    <div className="text-xs font-bold text-[#8C5A3C] mt-1 tabular-nums">
+                    <div className="text-xs font-bold text-[#8C5A3C] mt-0.5 tabular-nums">
                       {formatVND(line.unitPrice * line.quantity)}
                     </div>
                   </div>
@@ -494,14 +596,21 @@ export default function OrderPage() {
                     </span>
                     <button
                       type="button"
-                      onClick={() =>
+                      disabled={remainingForMore <= 0}
+                      onClick={() => {
+                        if (remainingForMore <= 0) return;
                         setCart((prev) =>
                           prev.map((x) =>
                             x.uid === line.uid ? { ...x, quantity: x.quantity + 1 } : x
                           )
-                        )
+                        );
+                      }}
+                      title={
+                        remainingForMore <= 0
+                          ? "Đã chạm giới hạn nguyên liệu trong kho"
+                          : "Tăng 1 cốc"
                       }
-                      className="w-7 h-7 rounded-lg bg-white border border-[#E5D8C9] flex items-center justify-center cursor-pointer"
+                      className="w-7 h-7 rounded-lg bg-white border border-[#E5D8C9] disabled:opacity-35 flex items-center justify-center cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -523,7 +632,7 @@ export default function OrderPage() {
         </div>
 
         {/* Friendly Loyal Customer Stamp Box */}
-        <div className="p-3.5 rounded-2xl bg-[#FAF6F1] border border-[#E6D9CB] space-y-2">
+        <div className="p-3 rounded-2xl bg-[#FAF6F1] border border-[#E6D9CB] space-y-2">
           <div className="flex items-center justify-between text-xs font-semibold text-[#5C4638]">
             <span className="inline-flex items-center gap-1.5">
               <HeartHandshake className="w-4 h-4 text-[#8C5A3C]" />
@@ -543,14 +652,14 @@ export default function OrderPage() {
               value={customerPhone}
               onChange={(e) => handleLookupCustomer(e.target.value)}
               placeholder="SĐT khách (không bắt buộc)"
-              className="rounded-xl border border-[#E5D8C9] bg-white px-3 py-2 text-xs text-[#2D1E17]"
+              className="rounded-xl border border-[#E5D8C9] bg-white px-3 py-1.5 text-xs text-[#2D1E17]"
             />
             <input
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               placeholder="Tên khách gọi thân mật"
-              className="rounded-xl border border-[#E5D8C9] bg-white px-3 py-2 text-xs text-[#2D1E17]"
+              className="rounded-xl border border-[#E5D8C9] bg-white px-3 py-1.5 text-xs text-[#2D1E17]"
             />
           </div>
 
@@ -580,7 +689,7 @@ export default function OrderPage() {
 
         {/* Totals & Easy Cash Change Helper */}
         {cart.length > 0 && (
-          <div className="space-y-2.5 pt-2 border-t border-[#EFE6DC]">
+          <div className="space-y-2 pt-2 border-t border-[#EFE6DC]">
             {discountAmount > 0 && (
               <div className="flex justify-between text-xs text-[#2F6B4F] font-semibold">
                 <span>Phiếu tặng khách thân thiết:</span>
@@ -594,7 +703,6 @@ export default function OrderPage() {
               </span>
             </div>
 
-            {/* Quick Cash Change Pills (so non-tech cashiers never do mental math) */}
             <div className="space-y-1.5">
               <div className="text-xs text-[#786254]">
                 Tính nhanh tiền thừa (nếu khách trả tiền mặt):
@@ -647,8 +755,8 @@ export default function OrderPage() {
           <button
             type="button"
             disabled={submitting || cart.length === 0}
-            onClick={() => submitOrder("TienMat")}
-            className="py-3.5 px-4 rounded-2xl bg-[#2D1E17] hover:bg-[#432E24] disabled:opacity-45 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer"
+            onClick={() => submitOrder("TienMat", false)}
+            className="py-3 px-4 rounded-2xl bg-[#2D1E17] hover:bg-[#432E24] disabled:opacity-45 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer"
           >
             <Banknote className="w-4 h-4" />
             Thu tiền mặt
@@ -658,7 +766,7 @@ export default function OrderPage() {
             type="button"
             disabled={submitting || cart.length === 0}
             onClick={handleOpenVietQR}
-            className="py-3.5 px-4 rounded-2xl bg-[#8C5A3C] hover:bg-[#73472D] disabled:opacity-45 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer"
+            className="py-3 px-4 rounded-2xl bg-[#8C5A3C] hover:bg-[#73472D] disabled:opacity-45 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer"
           >
             <QrCode className="w-4 h-4" />
             Quét mã VietQR
@@ -671,6 +779,7 @@ export default function OrderPage() {
         <DrinkCustomizeModal
           item={customizingItem}
           toppings={toppings}
+          maxAllowedQuantity={getRemainingCupsForItem(customizingItem)}
           onClose={() => setCustomizingItem(null)}
           onAdd={(cfg) => {
             const topNames = toppings
@@ -702,7 +811,7 @@ export default function OrderPage() {
           qr={qrModal}
           submitting={submitting}
           onClose={() => setQrModal(null)}
-          onConfirmPaid={() => submitOrder("VietQR")}
+          onConfirmPaid={(shouldAutoPrint) => submitOrder("VietQR", shouldAutoPrint)}
         />
       )}
 
@@ -710,7 +819,11 @@ export default function OrderPage() {
         <CafeReceiptModal
           order={completedOrder}
           shopInfo={shopInfo}
-          onClose={() => setCompletedOrder(null)}
+          autoPrint={autoPrintReceipt}
+          onClose={() => {
+            setCompletedOrder(null);
+            setAutoPrintReceipt(false);
+          }}
         />
       )}
     </div>

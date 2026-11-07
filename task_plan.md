@@ -67,6 +67,15 @@ Break the task into three to seven verifiable phases. Use only `pending`, `in_pr
 - [x] Thống kê chi tiết doanh thu theo **Ngày (4 ca trong ngày)**, **Tuần (7 ngày gần nhất)** và **Tháng (4 tuần trong 30 ngày qua)** tại `/manager/revenue`
 - **Status:** complete
 
+### Phase 8: Đổi thương hiệu Lặng. Café, Ước tính số cốc theo nguyên liệu, Tối ưu POS gọi món nhanh, Lịch sử các kỳ trước & In đúng 1 phiếu
+
+- [x] Đổi tên quán thành **Lặng. Café** và cập nhật STK mặc định thành `0336606699` — `TO CANH TUNG`
+- [x] Tính toán số cốc ước tính còn lại theo nguyên liệu (`estimatedMaxCups`), tự động trừ nguyên liệu khi tạo/làm đơn và chặn gọi vượt quá nguyên liệu hiện có
+- [x] Tối ưu giao diện Thu ngân (`/order`) dạng lưới 3 cột gọn gàng, hỗ trợ tìm kiếm không dấu, bấm `+1 Nhanh` không cần cuộn dài
+- [x] Bổ sung điều hướng xem lại các ngày trước, tuần trước, tháng trước (`offset`) kèm bảng phân tích tiêu hao & đề xuất phân phối nguyên liệu theo mùa/kỳ
+- [x] Khắc phục CSS `@media print` để chỉ in đúng 1 phiếu duy nhất đưa khách và bổ sung chế độ tự động hoàn tất + tự động in phiếu khi quét VietQR
+- **Status:** complete
+
 ## Key Questions
 
 1. Quán đơn lẻ hay chuỗi? -> Chọn mô hình 1 quán cafe chuẩn thực tế (12 bàn + Mua mang đi) để tối giản và thân thiện nhất với người dùng phổ thông.

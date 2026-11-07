@@ -4,7 +4,7 @@ import { CafeSessionProvider } from "@/context/CafeSessionContext";
 import { CafeShell } from "@/components/CafeShell";
 
 export const metadata: Metadata = {
-  title: "Mộc Miên Café — Quản lý quán cafe tối giản & thân thiện",
+  title: "Lặng. Café — Không gian Quản lý Quán Cafe Tối Giản",
   description: "Hệ thống gọi món, pha chế và quản lý quán cafe phong cách Minimalist ấm áp",
 };
 

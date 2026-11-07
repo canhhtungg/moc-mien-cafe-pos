@@ -9,6 +9,7 @@ import type {
   CupSize,
   IceLevel,
   Ingredient,
+  IngredientUsageStat,
   LoyalCustomer,
   MenuItem,
   OrderType,
@@ -44,18 +45,94 @@ export interface CreateCafeOrderInput {
   }>;
 }
 
+interface RecipeUsageItem {
+  ingredientId: string;
+  amountPerCup: number;
+}
+
+/**
+ * Định mức tiêu hao nguyên liệu cho mỗi cốc/phần để tính số cốc ước chừng còn pha được
+ * và tự động trừ kho khi làm món.
+ */
+const MENU_RECIPE_MAP: Record<string, RecipeUsageItem[]> = {
+  "CF-BACXIU": [
+    { ingredientId: "NL-CF", amountPerCup: 0.025 },
+    { ingredientId: "NL-SUATUOI", amountPerCup: 0.125 },
+    { ingredientId: "NL-SUADAC", amountPerCup: 0.08 },
+  ],
+  "CF-SUADA": [
+    { ingredientId: "NL-CF", amountPerCup: 0.025 },
+    { ingredientId: "NL-SUADAC", amountPerCup: 0.1 },
+  ],
+  "CF-DENDA": [{ ingredientId: "NL-CF", amountPerCup: 0.025 }],
+  "CF-COLDBREW": [{ ingredientId: "NL-CF", amountPerCup: 0.03 }],
+  "CF-LATTE": [
+    { ingredientId: "NL-CF", amountPerCup: 0.025 },
+    { ingredientId: "NL-SUATUOI", amountPerCup: 0.15 },
+  ],
+  "TR-DAOCAMSA": [{ ingredientId: "NL-DAO", amountPerCup: 0.1666 }], // 1 hộp = 6 cốc (2 hộp = 12 cốc)
+  "TR-VAI": [{ ingredientId: "NL-DAO", amountPerCup: 0.125 }], // 1 hộp = 8 cốc
+  "TR-OLONGSEN": [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.125 }],
+  "MC-UJI": [
+    { ingredientId: "NL-MATCHA", amountPerCup: 0.04 },
+    { ingredientId: "NL-SUATUOI", amountPerCup: 0.125 },
+  ],
+  "MC-CACAO": [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.125 }],
+  "MC-SUATT": [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.125 }],
+  "BN-CROISSANT": [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.08 }],
+  "BN-TIRAMISU": [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.1 }],
+  "BN-CHUOI": [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.08 }],
+};
+
+const INGREDIENT_DEFAULT_PER_CUP: Record<string, number> = {
+  "NL-CF": 0.025, // 1kg = 40 cốc
+  "NL-SUATUOI": 0.125, // 1 hộp 1L = 8 cốc
+  "NL-SUADAC": 0.1, // 1 lon = 10 cốc
+  "NL-DAO": 0.1666, // 1 hộp = 6 cốc
+  "NL-MATCHA": 0.04, // 1 gói 500g = 25 cốc
+  "NL-LYGIAY": 0.02, // 1 lốc 50 ly = 50 cốc
+};
+
+export function getRecipeForMenuItem(
+  menuItemId: string,
+  category: CategoryId
+): RecipeUsageItem[] {
+  if (MENU_RECIPE_MAP[menuItemId]) {
+    return MENU_RECIPE_MAP[menuItemId];
+  }
+  switch (category) {
+    case "CaPhe":
+      return [{ ingredientId: "NL-CF", amountPerCup: 0.025 }];
+    case "TraTraiCay":
+      return [{ ingredientId: "NL-DAO", amountPerCup: 0.1666 }];
+    case "MatchaSua":
+      return [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.125 }];
+    case "BanhNgot":
+      return [{ ingredientId: "NL-SUATUOI", amountPerCup: 0.08 }];
+  }
+}
+
 export class CafeService {
   async getBootstrap() {
     await ensureCafeDbReady();
     const db = getDbClient();
 
-    const [staffRes, menuRes, topRes, tableRes, setRes] = await Promise.all([
+    const [staffRes, menuRes, topRes, tableRes, setRes, ingRes] = await Promise.all([
       db.execute("SELECT * FROM cafe_staff"),
       db.execute("SELECT * FROM cafe_menu ORDER BY is_best_seller DESC, category, name"),
       db.execute("SELECT * FROM cafe_toppings ORDER BY price ASC"),
       db.execute("SELECT * FROM cafe_tables ORDER BY id ASC"),
       db.execute("SELECT key, value FROM cafe_settings"),
+      db.execute("SELECT * FROM cafe_ingredients"),
     ]);
+
+    const ingMap = new Map<string, { name: string; currentStock: number }>();
+    for (const r of ingRes.rows) {
+      ingMap.set(String(r.id), {
+        name: String(r.name),
+        currentStock: Number(r.current_stock),
+      });
+    }
 
     const staff: StaffMember[] = staffRes.rows.map((r) => ({
       id: String(r.id),
@@ -64,17 +141,43 @@ export class CafeService {
       shiftLabel: String(r.shift_label),
     }));
 
-    const menu: MenuItem[] = menuRes.rows.map((r) => ({
-      id: String(r.id),
-      name: String(r.name),
-      category: String(r.category) as CategoryId,
-      description: String(r.description ?? ""),
-      basePrice: Number(r.base_price),
-      isAvailable: Number(r.is_available) === 1,
-      isBestSeller: Number(r.is_best_seller) === 1,
-      hasSizeOption: Number(r.has_size_option) === 1,
-      hasTempOption: Number(r.has_temp_option) === 1,
-    }));
+    const menu: MenuItem[] = menuRes.rows.map((r) => {
+      const id = String(r.id);
+      const category = String(r.category) as CategoryId;
+      const recipe = getRecipeForMenuItem(id, category);
+
+      let estimatedMaxCups = 99;
+      let limitingIngredientName = "";
+
+      for (const req of recipe) {
+        const ing = ingMap.get(req.ingredientId);
+        if (ing) {
+          const possible = Math.max(
+            0,
+            Math.floor((ing.currentStock + 0.0001) / req.amountPerCup)
+          );
+          if (possible < estimatedMaxCups) {
+            estimatedMaxCups = possible;
+            limitingIngredientName = ing.name;
+          }
+        }
+      }
+
+      const rawAvailable = Number(r.is_available) === 1;
+      return {
+        id,
+        name: String(r.name),
+        category,
+        description: String(r.description ?? ""),
+        basePrice: Number(r.base_price),
+        isAvailable: rawAvailable && estimatedMaxCups > 0,
+        isBestSeller: Number(r.is_best_seller) === 1,
+        hasSizeOption: Number(r.has_size_option) === 1,
+        hasTempOption: Number(r.has_temp_option) === 1,
+        estimatedMaxCups,
+        limitingIngredientName,
+      };
+    });
 
     const toppings: ToppingOption[] = topRes.rows.map((r) => ({
       id: String(r.id),
@@ -102,11 +205,13 @@ export class CafeService {
       toppings,
       tables,
       shopInfo: {
-        shopName: map.get("shopName") ?? "Mộc Miên Café",
-        address: map.get("address") ?? "",
-        wifiName: map.get("wifiName") ?? "",
-        wifiPassword: map.get("wifiPassword") ?? "",
-        receiptFooter: map.get("receiptFooter") ?? "",
+        shopName: map.get("shopName") ?? "Lặng. Café",
+        address: map.get("address") ?? "28 Ngõ Nhỏ Phố Cổ, Hoàn Kiếm, Hà Nội",
+        wifiName: map.get("wifiName") ?? "Lang_Cafe",
+        wifiPassword: map.get("wifiPassword") ?? "henmotngayvui",
+        receiptFooter:
+          map.get("receiptFooter") ??
+          "Một khoảng lặng thơm mùi cà phê mới rang. Cảm ơn bạn đã ghé Lặng hôm nay!",
       },
     };
   }
@@ -138,11 +243,24 @@ export class CafeService {
     }
 
     const db = getDbClient();
-    const [menuRes, topRes, countRes] = await Promise.all([
+    const [menuRes, topRes, countRes, ingRes] = await Promise.all([
       db.execute("SELECT * FROM cafe_menu"),
       db.execute("SELECT * FROM cafe_toppings"),
       db.execute("SELECT COUNT(*) AS cnt FROM cafe_orders"),
+      db.execute("SELECT * FROM cafe_ingredients"),
     ]);
+
+    const ingMap = new Map<string, Ingredient>();
+    for (const r of ingRes.rows) {
+      ingMap.set(String(r.id), {
+        id: String(r.id),
+        name: String(r.name),
+        unit: String(r.unit),
+        currentStock: Number(r.current_stock),
+        minStock: Number(r.min_stock),
+        updatedAt: String(r.updated_at),
+      });
+    }
 
     const menuMap = new Map<string, MenuItem>();
     for (const r of menuRes.rows) {
@@ -184,6 +302,9 @@ export class CafeService {
       tableName = String(tRes.rows[0].name);
     }
 
+    // Kiểm tra tổng lượng nguyên liệu cần dùng cho cả đơn để chặn trường hợp 1 đơn gọi vượt quá nguyên liệu hiện có
+    const totalIngredientNeeded = new Map<string, number>();
+
     const computedItems: CafeOrderItem[] = [];
     let subtotal = 0;
     let totalDrinkCups = 0;
@@ -197,6 +318,18 @@ export class CafeService {
         throw new Error(`Món "${m.name}" hiện đang tạm hết, vui lòng chọn món khác giúp khách.`);
       }
       const qty = Math.max(1, Math.floor(raw.quantity));
+
+      // Cộng dồn định mức nguyên liệu của món
+      const recipe = getRecipeForMenuItem(m.id, m.category);
+      for (const req of recipe) {
+        const prev = totalIngredientNeeded.get(req.ingredientId) ?? 0;
+        totalIngredientNeeded.set(req.ingredientId, prev + req.amountPerCup * qty);
+      }
+      if (input.orderType === "MangDi" && m.category !== "BanhNgot") {
+        const prevCup = totalIngredientNeeded.get("NL-LYGIAY") ?? 0;
+        totalIngredientNeeded.set("NL-LYGIAY", prevCup + 0.02 * qty);
+      }
+
       const sizeExtra =
         m.hasSizeOption && raw.cupSize
           ? CUP_SIZE_OPTIONS.find((s) => s.value === raw.cupSize)?.extraPrice ?? 0
@@ -226,6 +359,18 @@ export class CafeService {
         unitPrice,
         lineTotal,
       });
+    }
+
+    // Xác thực tồn kho nguyên liệu đủ đáp ứng đơn
+    for (const [ingId, needed] of totalIngredientNeeded.entries()) {
+      const ing = ingMap.get(ingId);
+      if (ing && needed > ing.currentStock + 0.001) {
+        const perCup = INGREDIENT_DEFAULT_PER_CUP[ingId] ?? 0.125;
+        const maxCups = Math.max(0, Math.floor((ing.currentStock + 0.0001) / perCup));
+        throw new Error(
+          `Không đủ nguyên liệu "${ing.name}" trong kho (hiện chỉ còn đủ pha tối đa khoảng ${maxCups} cốc). Vui lòng giảm số lượng hoặc báo Quản lý nhập thêm.`
+        );
+      }
     }
 
     // Xử lý tích điểm & dùng phiếu tặng 30.000đ cho khách quen
@@ -305,6 +450,16 @@ export class CafeService {
         ],
       })),
     ];
+
+    // Trừ trực tiếp lượng nguyên liệu tương ứng để số cốc ước tính giảm ngay
+    for (const [ingId, needed] of totalIngredientNeeded.entries()) {
+      batchStmts.push({
+        sql: `UPDATE cafe_ingredients
+              SET current_stock = MAX(0, ROUND(current_stock - ?, 2)), updated_at = ?
+              WHERE id = ?`,
+        args: [needed, nowIso, ingId],
+      });
+    }
 
     if (cleanTableId) {
       batchStmts.push({
@@ -413,11 +568,37 @@ export class CafeService {
   async updatePrepStatus(orderId: string, nextStatus: PrepStatus): Promise<CafeOrder> {
     await ensureCafeDbReady();
     const db = getDbClient();
+    const existing = await this.getOrderById(orderId);
+    if (!existing) throw new Error("Không tìm thấy đơn hàng.");
+
     const nowIso = new Date().toISOString();
-    await db.execute({
-      sql: "UPDATE cafe_orders SET prep_status = ?, updated_at = ? WHERE id = ?",
-      args: [nextStatus, nowIso, orderId],
-    });
+    const stmts: Array<{ sql: string; args: unknown[] }> = [
+      {
+        sql: "UPDATE cafe_orders SET prep_status = ?, updated_at = ? WHERE id = ?",
+        args: [nextStatus, nowIso, orderId],
+      },
+    ];
+
+    // Đối với các đơn hàng mẫu có sẵn trong ca (ORD-1003, ORD-1004), khi pha chế bấm Đã pha xong (DaXong) thì trừ nguyên liệu
+    if (
+      nextStatus === "DaXong" &&
+      existing.prepStatus !== "DaXong" &&
+      (orderId === "ORD-1003" || orderId === "ORD-1004")
+    ) {
+      for (const item of existing.items) {
+        const recipe = getRecipeForMenuItem(item.menuItemId, "CaPhe");
+        for (const req of recipe) {
+          stmts.push({
+            sql: `UPDATE cafe_ingredients
+                  SET current_stock = MAX(0, ROUND(current_stock - ?, 2)), updated_at = ?
+                  WHERE id = ?`,
+            args: [req.amountPerCup * item.quantity, nowIso, req.ingredientId],
+          });
+        }
+      }
+    }
+
+    await db.batch(stmts as never, "write");
     await persistCafeDbToBlob();
     const updated = await this.getOrderById(orderId);
     if (!updated) throw new Error("Không tìm thấy đơn hàng.");
@@ -476,14 +657,24 @@ export class CafeService {
         (current_stock - min_stock) ASC,
         name ASC
     `);
-    return res.rows.map((r) => ({
-      id: String(r.id),
-      name: String(r.name),
-      unit: String(r.unit),
-      currentStock: Number(r.current_stock),
-      minStock: Number(r.min_stock),
-      updatedAt: String(r.updated_at),
-    }));
+    return res.rows.map((r) => {
+      const id = String(r.id);
+      const currentStock = Number(r.current_stock);
+      const perCup = INGREDIENT_DEFAULT_PER_CUP[id] ?? 0.125;
+      const estimatedCupsRemaining = Math.max(
+        0,
+        Math.floor((currentStock + 0.0001) / perCup)
+      );
+      return {
+        id,
+        name: String(r.name),
+        unit: String(r.unit),
+        currentStock,
+        minStock: Number(r.min_stock),
+        updatedAt: String(r.updated_at),
+        estimatedCupsRemaining,
+      };
+    });
   }
 
   async createIngredient(input: {
@@ -584,10 +775,11 @@ export class CafeService {
     if (!existing) throw new Error("Không tìm thấy đơn hàng cần hủy.");
 
     const db = getDbClient();
-    const stmts = [
+    const nowIso = new Date().toISOString();
+    const stmts: Array<{ sql: string; args: unknown[] }> = [
       {
         sql: "UPDATE cafe_orders SET prep_status = 'DaHuy', cancel_reason = ?, updated_at = ? WHERE id = ?",
-        args: [reason.trim() || "Hủy theo yêu cầu khách", new Date().toISOString(), orderId],
+        args: [reason.trim() || "Hủy theo yêu cầu khách", nowIso, orderId],
       },
     ];
     if (existing.tableId) {
@@ -596,34 +788,77 @@ export class CafeService {
         args: [existing.tableId, orderId],
       });
     }
-    await db.batch(stmts, "write");
+
+    // Hoàn lại nguyên liệu khi Quản lý hủy đơn bấm nhầm
+    if (existing.prepStatus !== "DaHuy") {
+      for (const item of existing.items) {
+        const recipe = getRecipeForMenuItem(item.menuItemId, "CaPhe");
+        for (const req of recipe) {
+          stmts.push({
+            sql: `UPDATE cafe_ingredients
+                  SET current_stock = ROUND(current_stock + ?, 2), updated_at = ?
+                  WHERE id = ?`,
+            args: [req.amountPerCup * item.quantity, nowIso, req.ingredientId],
+          });
+        }
+      }
+    }
+
+    await db.batch(stmts as never, "write");
     await persistCafeDbToBlob();
     const updated = await this.getOrderById(orderId);
     if (!updated) throw new Error("Lỗi cập nhật hủy đơn.");
     return updated;
   }
 
-  async getRevenueReport(period: RevenuePeriod = "day"): Promise<RevenueReportDTO> {
+  async getRevenueReport(
+    period: RevenuePeriod = "day",
+    rawOffset = 0
+  ): Promise<RevenueReportDTO> {
     await ensureCafeDbReady();
     const db = getDbClient();
+    const offset = Math.max(0, Math.floor(Number(rawOffset) || 0));
 
     const nowMs = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
-    const cutoffIso =
+    const spanDays = period === "day" ? 1 : period === "week" ? 7 : 30;
+
+    const endMs = nowMs - offset * spanDays * dayMs;
+    const startMs = endMs - spanDays * dayMs;
+
+    const startIso = new Date(startMs).toISOString();
+    const endIso = new Date(endMs + (offset === 0 ? 60000 : 0)).toISOString();
+
+    const fmtDate = (ms: number) =>
+      new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit" }).format(
+        new Date(ms)
+      );
+
+    const dateRangeLabel =
       period === "day"
-        ? new Date(nowMs - dayMs).toISOString()
-        : period === "week"
-          ? new Date(nowMs - 7 * dayMs).toISOString()
-          : new Date(nowMs - 30 * dayMs).toISOString();
+        ? `Ngày ${fmtDate(endMs)}`
+        : `${fmtDate(startMs)} – ${fmtDate(endMs)}`;
 
     const periodLabel =
       period === "day"
-        ? "Trong ngày (24 giờ qua)"
+        ? offset === 0
+          ? `Hôm nay (${fmtDate(endMs)})`
+          : offset === 1
+            ? `Hôm qua (${fmtDate(endMs)})`
+            : `${offset} ngày trước (${fmtDate(endMs)})`
         : period === "week"
-          ? "Trong tuần (7 ngày gần nhất)"
-          : "Trong tháng (30 ngày gần nhất)";
+          ? offset === 0
+            ? `Tuần này (${dateRangeLabel})`
+            : offset === 1
+              ? `Tuần trước (${dateRangeLabel})`
+              : `${offset} tuần trước (${dateRangeLabel})`
+          : offset === 0
+            ? `Tháng này (${dateRangeLabel})`
+            : offset === 1
+              ? `Tháng trước (${dateRangeLabel})`
+              : `${offset} tháng trước (${dateRangeLabel})`;
 
-    const [aggRes, topRes, lowIngRes, ordersRes] = await Promise.all([
+    const [aggRes, topRes, lowIngRes, ordersRes, ingList] = await Promise.all([
       db.execute({
         sql: `
           SELECT
@@ -633,9 +868,9 @@ export class CafeService {
             SUM(CASE WHEN prep_status != 'DaHuy' THEN 1 ELSE 0 END) AS paid_cnt,
             SUM(CASE WHEN prep_status = 'DaHuy' THEN 1 ELSE 0 END) AS cancel_cnt
           FROM cafe_orders
-          WHERE created_at >= ?
+          WHERE created_at >= ? AND created_at <= ?
         `,
-        args: [cutoffIso],
+        args: [startIso, endIso],
       }),
       db.execute({
         sql: `
@@ -646,18 +881,19 @@ export class CafeService {
             SUM(oi.line_total) AS item_rev
           FROM cafe_order_items oi
           JOIN cafe_orders o ON o.id = oi.order_id
-          WHERE o.prep_status != 'DaHuy' AND o.created_at >= ?
+          WHERE o.prep_status != 'DaHuy' AND o.created_at >= ? AND o.created_at <= ?
           GROUP BY oi.menu_item_id, oi.menu_item_name
           ORDER BY qty_sold DESC, item_rev DESC
           LIMIT 6
         `,
-        args: [cutoffIso],
+        args: [startIso, endIso],
       }),
       db.execute("SELECT COUNT(*) AS cnt FROM cafe_ingredients WHERE current_stock <= min_stock"),
       db.execute({
-        sql: "SELECT * FROM cafe_orders WHERE created_at >= ? ORDER BY created_at DESC LIMIT 60",
-        args: [cutoffIso],
+        sql: "SELECT * FROM cafe_orders WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC LIMIT 80",
+        args: [startIso, endIso],
       }),
+      this.listIngredients(),
     ]);
 
     const r0 = aggRes.rows[0] ?? {};
@@ -672,9 +908,9 @@ export class CafeService {
         SELECT COALESCE(SUM(oi.quantity), 0) AS total_items
         FROM cafe_order_items oi
         JOIN cafe_orders o ON o.id = oi.order_id
-        WHERE o.prep_status != 'DaHuy' AND o.created_at >= ?
+        WHERE o.prep_status != 'DaHuy' AND o.created_at >= ? AND o.created_at <= ?
       `,
-      args: [cutoffIso],
+      args: [startIso, endIso],
     });
     const totalCupsSold = Number(cupsRes.rows[0]?.total_items ?? 0);
 
@@ -698,11 +934,14 @@ export class CafeService {
       );
     }
 
-    const breakdown = this.computePeriodBreakdown(period, recentOrders, nowMs);
+    const breakdown = this.computePeriodBreakdown(period, recentOrders, endMs);
+    const ingredientUsage = this.computeIngredientUsageForOrders(recentOrders, ingList);
 
     return {
       period,
+      offset,
       periodLabel,
+      dateRangeLabel,
       totalRevenue,
       cashRevenue,
       vietqrRevenue,
@@ -712,6 +951,7 @@ export class CafeService {
       averageOrderValue: paidOrdersCount > 0 ? Math.round(totalRevenue / paidOrdersCount) : 0,
       lowStockIngredientsCount: Number(lowIngRes.rows[0]?.cnt ?? 0),
       breakdown,
+      ingredientUsage,
       topSellingItems: topRes.rows.map((row) => ({
         menuItemId: String(row.menu_item_id),
         menuItemName: String(row.menu_item_name),
@@ -722,10 +962,50 @@ export class CafeService {
     };
   }
 
+  private computeIngredientUsageForOrders(
+    orders: CafeOrder[],
+    ingredients: Ingredient[]
+  ): IngredientUsageStat[] {
+    const usedByIng = new Map<string, number>();
+    for (const ord of orders) {
+      if (ord.prepStatus === "DaHuy") continue;
+      for (const item of ord.items) {
+        const recipe = getRecipeForMenuItem(item.menuItemId, "CaPhe");
+        for (const req of recipe) {
+          const prev = usedByIng.get(req.ingredientId) ?? 0;
+          usedByIng.set(req.ingredientId, prev + req.amountPerCup * item.quantity);
+        }
+        if (ord.orderType === "MangDi") {
+          const prevCup = usedByIng.get("NL-LYGIAY") ?? 0;
+          usedByIng.set("NL-LYGIAY", prevCup + 0.02 * item.quantity);
+        }
+      }
+    }
+
+    return ingredients.map((ing) => {
+      const usedAmount = Math.round((usedByIng.get(ing.id) ?? 0) * 100) / 100;
+      const isLow = ing.currentStock <= ing.minStock;
+      const recommendation = isLow
+        ? `Cần nhập gấp tối thiểu +${Math.max(5, Math.ceil(ing.minStock * 2 - ing.currentStock))} ${ing.unit}`
+        : usedAmount >= ing.minStock * 0.5
+          ? "Tiêu thụ mạnh trong kỳ — Nên dự trữ thêm cho đợt tới"
+          : `Tồn kho ổn định (pha được ~${ing.estimatedCupsRemaining ?? 20} cốc)`;
+      return {
+        ingredientId: ing.id,
+        ingredientName: ing.name,
+        unit: ing.unit,
+        usedAmount,
+        currentStock: ing.currentStock,
+        minStock: ing.minStock,
+        recommendation,
+      };
+    });
+  }
+
   private computePeriodBreakdown(
     period: RevenuePeriod,
     orders: CafeOrder[],
-    nowMs: number
+    anchorEndMs: number
   ): RevenueBreakdownBucket[] {
     const validOrders = orders.filter((o) => o.prepStatus !== "DaHuy");
     const dayMs = 24 * 60 * 60 * 1000;
@@ -749,33 +1029,34 @@ export class CafeService {
     if (period === "week") {
       const buckets: RevenueBreakdownBucket[] = [];
       for (let d = 6; d >= 0; d--) {
-        const endMs = nowMs - d * dayMs;
+        const endMs = anchorEndMs - d * dayMs;
         const startMs = endMs - dayMs;
         const dateObj = new Date(endMs);
         const dateStr = new Intl.DateTimeFormat("vi-VN", {
           day: "2-digit",
           month: "2-digit",
         }).format(dateObj);
-        const label = d === 0 ? "Hôm nay" : d === 1 ? "Hôm qua" : `${d} ngày trước`;
+        const label = `Ngày ${dateStr}`;
+        const subLabel = d === 0 ? "Ngày cuối kỳ" : `Cách ${d} ngày`;
         const matched = validOrders.filter((o) => {
           const t = new Date(o.createdAt).getTime();
           return t > startMs && t <= endMs + (d === 0 ? 60000 : 0);
         });
-        buckets.push(this.summarizeBucket(label, `Ngày ${dateStr}`, matched));
+        buckets.push(this.summarizeBucket(label, subLabel, matched));
       }
       return buckets;
     }
 
-    // period === "month": 4 tuần trong 30 ngày gần nhất
+    // period === "month": 4 tuần trong kỳ 30 ngày đang chọn
     const weekRanges = [
-      { label: "Tuần 4 (Mới nhất)", subLabel: "7 ngày gần đây", minDays: 0, maxDays: 7 },
-      { label: "Tuần 3", subLabel: "8 – 14 ngày trước", minDays: 7, maxDays: 14 },
-      { label: "Tuần 2", subLabel: "15 – 21 ngày trước", minDays: 14, maxDays: 21 },
-      { label: "Tuần 1", subLabel: "22 – 30 ngày trước", minDays: 21, maxDays: 31 },
+      { label: "Tuần 4 (Cuối kỳ)", subLabel: "Ngày 23 – 30 của kỳ", minDays: 0, maxDays: 7 },
+      { label: "Tuần 3", subLabel: "Ngày 15 – 22 của kỳ", minDays: 7, maxDays: 14 },
+      { label: "Tuần 2", subLabel: "Ngày 08 – 14 của kỳ", minDays: 14, maxDays: 21 },
+      { label: "Tuần 1 (Đầu kỳ)", subLabel: "Ngày 01 – 07 của kỳ", minDays: 21, maxDays: 31 },
     ];
     return weekRanges.reverse().map((w) => {
-      const maxMs = nowMs - w.minDays * dayMs + (w.minDays === 0 ? 60000 : 0);
-      const minMs = nowMs - w.maxDays * dayMs;
+      const maxMs = anchorEndMs - w.minDays * dayMs + (w.minDays === 0 ? 60000 : 0);
+      const minMs = anchorEndMs - w.maxDays * dayMs;
       const matched = validOrders.filter((o) => {
         const t = new Date(o.createdAt).getTime();
         return t > minMs && t <= maxMs;
@@ -821,15 +1102,17 @@ export class CafeService {
       map.set(String(r.key), String(r.value));
     }
     return {
-      shopName: map.get("shopName") ?? "Mộc Miên Café",
-      address: map.get("address") ?? "",
-      wifiName: map.get("wifiName") ?? "",
-      wifiPassword: map.get("wifiPassword") ?? "",
-      receiptFooter: map.get("receiptFooter") ?? "",
+      shopName: map.get("shopName") ?? "Lặng. Café",
+      address: map.get("address") ?? "28 Ngõ Nhỏ Phố Cổ, Hoàn Kiếm, Hà Nội",
+      wifiName: map.get("wifiName") ?? "Lang_Cafe",
+      wifiPassword: map.get("wifiPassword") ?? "henmotngayvui",
+      receiptFooter:
+        map.get("receiptFooter") ??
+        "Một khoảng lặng thơm mùi cà phê mới rang. Cảm ơn bạn đã ghé Lặng hôm nay!",
       bankBin: map.get("bankBin") ?? "970422",
       bankShortName: map.get("bankShortName") ?? "MB Bank",
-      bankAccountNo: map.get("bankAccountNo") ?? "0966889999",
-      bankAccountName: map.get("bankAccountName") ?? "MOC MIEN CAFE",
+      bankAccountNo: map.get("bankAccountNo") ?? "0336606699",
+      bankAccountName: map.get("bankAccountName") ?? "TO CANH TUNG",
     };
   }
 

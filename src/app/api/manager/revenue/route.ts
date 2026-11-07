@@ -9,11 +9,12 @@ export async function GET(req: NextRequest) {
   try {
     requireRequestRole(req, ["Manager"], "Xem báo cáo doanh thu quán");
     const rawPeriod = req.nextUrl.searchParams.get("period") ?? "day";
+    const rawOffset = Number(req.nextUrl.searchParams.get("offset") ?? "0") || 0;
     const period: RevenuePeriod =
       rawPeriod === "week" || rawPeriod === "month" ? rawPeriod : "day";
 
     const svc = new CafeService();
-    const report = await svc.getRevenueReport(period);
+    const report = await svc.getRevenueReport(period, rawOffset);
     return NextResponse.json(report, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

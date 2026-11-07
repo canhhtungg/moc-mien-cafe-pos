@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check, Minus, Plus, X } from "lucide-react";
+import { AlertTriangle, Check, Minus, Plus, X } from "lucide-react";
 import {
   CUP_SIZE_OPTIONS,
   formatVND,
@@ -21,6 +21,7 @@ const QUICK_NOTES = ["Ít sữa đặc", "Khuấy đều", "Bỏ túi mang đi",
 interface DrinkCustomizeModalProps {
   item: MenuItem;
   toppings: ToppingOption[];
+  maxAllowedQuantity: number;
   onClose: () => void;
   onAdd: (configured: {
     menuItem: MenuItem;
@@ -37,9 +38,11 @@ interface DrinkCustomizeModalProps {
 export function DrinkCustomizeModal({
   item,
   toppings,
+  maxAllowedQuantity,
   onClose,
   onAdd,
 }: DrinkCustomizeModalProps) {
+  const safeCap = Math.max(1, maxAllowedQuantity);
   const [quantity, setQuantity] = useState(1);
   const [cupSize, setCupSize] = useState<CupSize>("S");
   const [sugarLevel, setSugarLevel] = useState<SugarLevel>("70");
@@ -71,15 +74,26 @@ export function DrinkCustomizeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#2D1E17]/40 backdrop-blur-[2px] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-[#2D1E17]/40 backdrop-blur-[2px] flex items-center justify-center p-4 no-print">
       <div className="bg-[#FFFDF9] rounded-3xl border border-[#E6D9CB] w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden">
         {/* Header */}
         <div className="p-5 border-b border-[#EDE2D6] flex items-start justify-between gap-4">
-          <div>
-            <h2 className="font-serif-cafe text-xl font-semibold text-[#2D1E17]">
-              {item.name}
-            </h2>
-            <p className="text-sm text-[#786254] mt-0.5">{item.description}</p>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="font-serif-cafe text-xl font-semibold text-[#2D1E17]">
+                {item.name}
+              </h2>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  safeCap <= 10
+                    ? "bg-[#FDF2EA] text-[#B8431E] border border-[#E08E55]"
+                    : "bg-[#E6F2EC] text-[#23583E]"
+                }`}
+              >
+                Kho còn pha được ~{safeCap} cốc
+              </span>
+            </div>
+            <p className="text-xs text-[#786254]">{item.description}</p>
           </div>
           <button
             type="button"
@@ -92,7 +106,7 @@ export function DrinkCustomizeModal({
         </div>
 
         {/* Scrollable Options */}
-        <div className="p-5 overflow-y-auto space-y-5">
+        <div className="p-5 overflow-y-auto space-y-4">
           {item.hasSizeOption && (
             <div className="space-y-2">
               <div className="text-sm font-semibold text-[#2D1E17]">Chọn cỡ ly</div>
@@ -222,6 +236,13 @@ export function DrinkCustomizeModal({
               className="w-full rounded-2xl border border-[#E5D8C9] bg-white px-3.5 py-2.5 text-sm text-[#2D1E17]"
             />
           </div>
+
+          {quantity >= safeCap && (
+            <div className="p-2.5 rounded-xl bg-[#FDF2EA] border border-[#E08E55] text-xs font-semibold text-[#B8431E] flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>Đã chạm giới hạn tối đa {safeCap} cốc theo lượng nguyên liệu sẵn có trong kho.</span>
+            </div>
+          )}
         </div>
 
         {/* Bottom Action Bar */}
@@ -238,9 +259,10 @@ export function DrinkCustomizeModal({
             <span className="w-7 text-center font-bold tabular-nums">{quantity}</span>
             <button
               type="button"
-              onClick={() => setQuantity((q) => q + 1)}
+              disabled={quantity >= safeCap}
+              onClick={() => setQuantity((q) => Math.min(safeCap, q + 1))}
               aria-label="Tăng số lượng"
-              className="w-9 h-9 rounded-xl hover:bg-[#F2E9DF] flex items-center justify-center cursor-pointer"
+              className="w-9 h-9 rounded-xl hover:bg-[#F2E9DF] disabled:opacity-35 flex items-center justify-center cursor-pointer"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -262,7 +284,7 @@ export function DrinkCustomizeModal({
             }
             className="flex-1 py-3 px-5 rounded-2xl bg-[#8C5A3C] hover:bg-[#73472D] text-white text-sm font-semibold flex items-center justify-between cursor-pointer"
           >
-            <span>Thêm vào phiếu</span>
+            <span>Thêm vào phiếu ({quantity} cốc)</span>
             <span className="tabular-nums font-bold">{formatVND(totalLine)}</span>
           </button>
         </div>

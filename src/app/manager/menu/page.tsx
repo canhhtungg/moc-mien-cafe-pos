@@ -539,7 +539,11 @@ export default function ManagerMenuPage() {
                         >
                           {ing.currentStock} {ing.unit}
                         </strong>{" "}
-                        • Ngưỡng an toàn tối thiểu: {ing.minStock} {ing.unit}
+                        (Ước tính pha được{" "}
+                        <strong className="text-[#8C5A3C]">
+                          ~{ing.estimatedCupsRemaining ?? 20} cốc
+                        </strong>
+                        ) • An toàn: {ing.minStock} {ing.unit}
                       </div>
                     </div>
 

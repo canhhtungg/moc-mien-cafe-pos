@@ -16,15 +16,15 @@ export default function ManagerSettingsPage() {
   const { roleFetch, refreshBootstrap } = useCafeSession();
   const [banks, setBanks] = useState<BankItem[]>([]);
   const [form, setForm] = useState<CafeSettings>({
-    shopName: "Mộc Miên Café",
+    shopName: "Lặng. Café",
     address: "28 Ngõ Nhỏ Phố Cổ, Hoàn Kiếm, Hà Nội",
-    wifiName: "MocMien_Cafe",
+    wifiName: "Lang_Cafe",
     wifiPassword: "henmotngayvui",
-    receiptFooter: "Cảm ơn bạn đã ghé Mộc Miên hôm nay. Chúc bạn một ngày thật êm!",
+    receiptFooter: "Một khoảng lặng thơm mùi cà phê mới rang. Cảm ơn bạn đã ghé Lặng hôm nay!",
     bankBin: "970422",
     bankShortName: "MB Bank",
-    bankAccountNo: "0966889999",
-    bankAccountName: "MOC MIEN CAFE",
+    bankAccountNo: "0336606699",
+    bankAccountName: "TO CANH TUNG",
   });
   const [qrUrl, setQrUrl] = useState<string>("");
   const [banner, setBanner] = useState<string | null>(null);
@@ -127,13 +127,27 @@ export default function ManagerSettingsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#5C4638]">Tên quán</label>
+              <label className="text-xs font-semibold text-[#5C4638]">Tên quán (gợi ý vibe nghệ)</label>
               <input
                 type="text"
                 value={form.shopName}
                 onChange={(e) => setForm({ ...form, shopName: e.target.value })}
                 className="w-full rounded-2xl border border-[#E5D8C9] px-3.5 py-2 text-sm"
               />
+              <div className="flex flex-wrap gap-1 pt-1">
+                {["Lặng. Café", "Chạm. Café", "Mơ Màng Café", "Thơ. Café", "Khói. Café"].map(
+                  (presetName) => (
+                    <button
+                      key={presetName}
+                      type="button"
+                      onClick={() => setForm({ ...form, shopName: presetName })}
+                      className="px-2 py-0.5 rounded-lg bg-[#FAF6F1] hover:bg-[#F2E9DF] border border-[#E5D8C9] text-[11px] font-semibold text-[#5C4638] cursor-pointer"
+                    >
+                      {presetName}
+                    </button>
+                  )
+                )}
+              </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[#5C4638]">Địa chỉ quán</label>

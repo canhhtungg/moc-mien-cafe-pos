@@ -24,6 +24,18 @@ export function parseThousandDigits(formatted: string): number {
   return Number(digits) || 0;
 }
 
+/**
+ * Bỏ dấu tiếng Việt để nhân viên thu ngân gõ tìm món cực nhanh (VD: "bac xiu" -> khớp "Bạc Xỉu Kem Muối")
+ */
+export function normalizeSearchVN(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .trim();
+}
+
 export function formatTimeVN(iso: string): string {
   try {
     const d = new Date(iso);

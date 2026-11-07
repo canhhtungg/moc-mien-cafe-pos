@@ -120,7 +120,30 @@ export async function seedCafeDatabase(db: Client): Promise<void> {
     { sql: "INSERT INTO cafe_customers VALUES (?, ?, ?, ?, ?)", args: ["0987654321", "Hoàng Nam", 8, 0, 310000] },
     { sql: "INSERT INTO cafe_customers VALUES (?, ?, ?, ?, ?)", args: ["0912345678", "Thu Hà", 5, 0, 195000] },
 
-    // 7A. Các đơn lịch sử trong Tháng & trong Tuần (Đã phục vụ xong - DaGiao)
+    // 7A. Các đơn lịch sử của Tháng trước (35 - 50 ngày trước) để Quản lý xem lại Tháng trước
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0985", "#085", "TaiBan", "B01", "Bàn 01", "NV-CASHIER", "Lan Anh", null, null, 245000, 0, 245000, "VietQR", null, null, "DaGiao", null, daysAgoISO(45, 90), daysAgoISO(45, 70)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0985", "CF-BACXIU", "Bạc Xỉu Kem Muối", 5, "S", "70", "ItDa", "", "", 35000, 175000],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0985", "CF-BACXIU", "Bạc Xỉu Kem Muối", 2, "S", "70", "ItDa", "", "", 35000, 70000],
+    },
+
+    {
+      sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0986", "#086", "MangDi", null, null, "NV-CASHIER", "Lan Anh", "0901234567", "Minh Anh", 225000, 0, 225000, "TienMat", 250000, 25000, "DaGiao", null, daysAgoISO(36, 120), daysAgoISO(36, 100)],
+    },
+    {
+      sql: `INSERT INTO cafe_order_items (order_id, menu_item_id, menu_item_name, quantity, cup_size, sugar_level, ice_level, toppings_text, item_note, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: ["ORD-0986", "MC-UJI", "Matcha Uji Kem Phô Mai", 5, "S", "70", "BinhThuong", "", "", 45000, 225000],
+    },
+
+    // 7B. Các đơn lịch sử của các Tuần trước trong Tháng này (8 - 22 ngày trước)
     {
       sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: ["ORD-0991", "#091", "TaiBan", "B03", "Bàn 03", "NV-CASHIER", "Lan Anh", null, null, 145000, 0, 145000, "VietQR", null, null, "DaGiao", null, daysAgoISO(22, 60), daysAgoISO(22, 45)],
@@ -156,6 +179,7 @@ export async function seedCafeDatabase(db: Client): Promise<void> {
       args: ["ORD-0993", "CF-COLDBREW", "Cold Brew Cam Vàng", 2, "S", "70", "ItDa", "", "", 40000, 80000],
     },
 
+    // 7C. Các đơn lịch sử của các Ngày trước trong Tuần này (1 - 5 ngày trước)
     {
       sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: ["ORD-0994", "#094", "TaiBan", "B04", "Bàn 04", "NV-CASHIER", "Lan Anh", "0987654321", "Hoàng Nam", 132000, 0, 132000, "VietQR", null, null, "DaGiao", null, daysAgoISO(5, 120), daysAgoISO(5, 100)],
@@ -200,7 +224,7 @@ export async function seedCafeDatabase(db: Client): Promise<void> {
       args: ["ORD-0997", "CF-SUADA", "Cà Phê Phin Sữa Đá", 4, "S", "70", "BinhThuong", "", "", 29000, 116000],
     },
 
-    // 7B. Đơn hàng mẫu sinh động trong ca hôm nay (đã phục vụ + đã pha xong + đang pha + mới gọi)
+    // 7D. Đơn hàng mẫu sinh động trong ca hôm nay (đã phục vụ + đã pha xong + đang pha + mới gọi)
     {
       sql: `INSERT INTO cafe_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: ["ORD-1001", "#101", "MangDi", null, null, "NV-CASHIER", "Lan Anh", "0987654321", "Hoàng Nam", 64000, 0, 64000, "VietQR", null, null, "DaGiao", null, minsAgoISO(95), minsAgoISO(88)],
@@ -245,16 +269,16 @@ export async function seedCafeDatabase(db: Client): Promise<void> {
       args: ["ORD-1004", "BN-CROISSANT", "Bánh Sừng Bò Bơ Pháp", 1, null, null, null, "", "Làm nóng giòn", 32000, 32000],
     },
 
-    // 8. Cấu hình quán & Tài khoản thụ hưởng VietQR
-    { sql: "INSERT INTO cafe_settings VALUES ('shopName', 'Mộc Miên Café')", args: [] },
+    // 8. Cấu hình quán ("Lặng. Café") & Tài khoản thụ hưởng VietQR mặc định ("0336606699" - "TO CANH TUNG")
+    { sql: "INSERT INTO cafe_settings VALUES ('shopName', 'Lặng. Café')", args: [] },
     { sql: "INSERT INTO cafe_settings VALUES ('address', '28 Ngõ Nhỏ Phố Cổ, Hoàn Kiếm, Hà Nội')", args: [] },
-    { sql: "INSERT INTO cafe_settings VALUES ('wifiName', 'MocMien_Cafe')", args: [] },
+    { sql: "INSERT INTO cafe_settings VALUES ('wifiName', 'Lang_Cafe')", args: [] },
     { sql: "INSERT INTO cafe_settings VALUES ('wifiPassword', 'henmotngayvui')", args: [] },
-    { sql: "INSERT INTO cafe_settings VALUES ('receiptFooter', 'Cảm ơn bạn đã ghé Mộc Miên hôm nay. Chúc bạn một ngày thật êm!')", args: [] },
+    { sql: "INSERT INTO cafe_settings VALUES ('receiptFooter', 'Một khoảng lặng thơm mùi cà phê mới rang. Cảm ơn bạn đã ghé Lặng hôm nay!')", args: [] },
     { sql: "INSERT INTO cafe_settings VALUES ('bankBin', '970422')", args: [] },
     { sql: "INSERT INTO cafe_settings VALUES ('bankShortName', 'MB Bank')", args: [] },
-    { sql: "INSERT INTO cafe_settings VALUES ('bankAccountNo', '0966889999')", args: [] },
-    { sql: "INSERT INTO cafe_settings VALUES ('bankAccountName', 'MOC MIEN CAFE')", args: [] },
+    { sql: "INSERT INTO cafe_settings VALUES ('bankAccountNo', '0336606699')", args: [] },
+    { sql: "INSERT INTO cafe_settings VALUES ('bankAccountName', 'TO CANH TUNG')", args: [] },
   ];
 
   await db.batch(statements, "write");

@@ -26,7 +26,7 @@ export function sanitizeVietQRNote(raw: string): string {
     .replace(/[^A-Z0-9 ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return (ascii || "MOCMIEN").slice(0, 25);
+  return (ascii || "LANGCAFE").slice(0, 25);
 }
 
 export class VietQRService {
@@ -94,8 +94,8 @@ export class VietQRService {
 
     const bankBin = params.overrideBin ?? map.get("bankBin") ?? "970422";
     const bankShortName = params.overrideBankShortName ?? map.get("bankShortName") ?? "MB Bank";
-    const accountNo = params.overrideAccountNo ?? map.get("bankAccountNo") ?? "0966889999";
-    const accountName = params.overrideAccountName ?? map.get("bankAccountName") ?? "MOC MIEN CAFE";
+    const accountNo = params.overrideAccountNo ?? map.get("bankAccountNo") ?? "0336606699";
+    const accountName = params.overrideAccountName ?? map.get("bankAccountName") ?? "TO CANH TUNG";
     const amount = Math.max(0, Math.round(params.amount));
     const addInfo = sanitizeVietQRNote(params.note);
 
