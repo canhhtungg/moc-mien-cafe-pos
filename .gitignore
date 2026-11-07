@@ -1,0 +1,27 @@
+# Dependencies
+/node_modules
+
+# Next.js build output
+/.next
+/out
+/build
+
+# Local SQLite database files
+/data/*.db
+/data/*.db-journal
+/data/*.db-wal
+/data/*.db-shm
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel
+
+# OS & TypeScript cache
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+next-env.d.ts
