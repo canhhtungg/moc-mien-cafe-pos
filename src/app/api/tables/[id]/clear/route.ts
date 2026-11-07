@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { CafeService } from "@/server/services/CafeService";
 import { handleApiError, requireRequestRole } from "@/server/api-helpers";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -11,7 +13,11 @@ export async function POST(
     const { id } = await context.params;
     const svc = new CafeService();
     await svc.clearTable(id);
-    return NextResponse.json({ ok: true });
+    const [tables, activeOrders] = await Promise.all([
+      svc.listTables(),
+      svc.listOrders(["ChoPha", "DangPha", "DaXong"], 50),
+    ]);
+    return NextResponse.json({ ok: true, tables, activeOrders });
   } catch (err) {
     return handleApiError(err, "Không thể cập nhật trạng thái bàn.");
   }

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CafeService } from "@/server/services/CafeService";
 import { handleApiError, requireRequestRole } from "@/server/api-helpers";
-import type { PrepStatus } from "@/types/cafe";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +12,25 @@ export async function GET(req: NextRequest) {
 
     if (mode === "barista") {
       const orders = await svc.listOrders(["ChoPha", "DangPha"], 50);
-      return NextResponse.json({ orders });
+      return NextResponse.json(
+        { orders },
+        {
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          },
+        }
+      );
     }
 
     const orders = await svc.listOrders(["ChoPha", "DangPha", "DaXong"], 50);
-    return NextResponse.json({ orders });
+    return NextResponse.json(
+      { orders },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
+      }
+    );
   } catch (err) {
     return handleApiError(err, "Không thể tải danh sách đơn trong ca.");
   }

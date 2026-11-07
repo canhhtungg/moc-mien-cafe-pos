@@ -8,11 +8,11 @@ Xây dựng hoàn chỉnh hệ thống quản lý quán cafe "Mộc Miên Café"
 
 ## Next Step
 
-Khởi tạo cấu hình dự án Next.js 15 + TypeScript + Tailwind CSS v4 + SQLite (`@libsql/client`) + Vitest trong thư mục `PTTKHT`.
+Hoàn tất kiểm thử, đẩy bản vá lên GitHub `canhhtungg/moc-mien-cafe-pos` và deploy bản Production lên Vercel `https://moc-mien-cafe-pos.vercel.app`.
 
 ## Current Phase
 
-Phase 1
+Phase 6
 
 ## Phases
 
@@ -49,9 +49,16 @@ Break the task into three to seven verifiable phases. Use only `pending`, `in_pr
 
 ### Phase 5: Triển khai GitHub & Vercel riêng biệt (moc-mien-cafe-pos)
 
-- [ ] Khởi tạo Git repository mới tại `PTTKHT` và đẩy lên kho GitHub riêng `canhhtungg/moc-mien-cafe-pos`
-- [ ] Liên kết dự án Vercel mới `canhhtungg/moc-mien-cafe-pos` và deploy bản Production
-- **Status:** in_progress
+- [x] Khởi tạo Git repository mới tại `PTTKHT` và đẩy lên kho GitHub riêng `canhhtungg/moc-mien-cafe-pos`
+- [x] Liên kết dự án Vercel mới `canhhtungg/moc-mien-cafe-pos` và deploy bản Production (`https://moc-mien-cafe-pos.vercel.app`)
+- **Status:** complete
+
+### Phase 6: Lưu trữ bền vững Cloud (Vercel Blob) & Đồng bộ UI tức thì
+
+- [x] Khởi tạo kho lưu trữ đám mây `moc-mien-cafe-store` (Vercel Blob) gắn trực tiếp vào dự án `canhhtungg/moc-mien-cafe-pos`
+- [x] Nâng cấp `src/server/db/client.ts` và `CafeService.ts` tự động đồng bộ trạng thái CSDL SQLite lên Cloud Blob sau mọi thao tác ghi và kiểm tra ETag trước mỗi lần đọc để loại bỏ hoàn toàn hiện tượng mất dữ liệu giữa các Serverless Lambda instances
+- [x] Cải tiến trang `/tables` và `/barista`: cập nhật UI tức thì ngay khi bấm giao nước / dọn bàn, trả dữ liệu mới nhất ngay trong response mutation, và tự động polling mỗi 5 giây + khi focus cửa sổ
+- **Status:** complete
 
 ## Key Questions
 

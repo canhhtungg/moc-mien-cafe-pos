@@ -119,6 +119,10 @@ describe("Mộc Miên Café — Nghiệp vụ cốt lõi & Phân quyền chặt 
     const bootAfter = await svc.getBootstrap();
     const b01 = bootAfter.tables.find((t) => t.id === "B01");
     expect(b01?.status).toBe("Trong");
+
+    // Đơn của Bàn 01 cũng tự động chuyển sang DaGiao và không còn nằm trong danh sách đơn đang thực hiện trong ca
+    const activeOrdersAfterClear = await svc.listOrders(["ChoPha", "DangPha", "DaXong"]);
+    expect(activeOrdersAfterClear.some((o) => o.id === created.id)).toBe(false);
   });
 
   it("sinh mã VietQR động đúng chuẩn EMVCo CRC16 chứa sẵn số tiền đơn cafe", async () => {

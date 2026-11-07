@@ -7,50 +7,106 @@ import { formatTimeVN, PREP_STATUS_META } from "@/lib/format";
 import type { CafeOrder } from "@/types/cafe";
 
 export default function TablesPage() {
-  const { tables, refreshBootstrap, roleFetch } = useCafeSession();
+  const { tables, refreshBootstrap, applyTables, roleFetch } = useCafeSession();
   const [activeOrders, setActiveOrders] = useState<CafeOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const loadShiftStatus = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [ordRes] = await Promise.all([
-        roleFetch("/api/orders?mode=active"),
-        refreshBootstrap(),
-      ]);
-      if (ordRes.ok) {
-        const data = await ordRes.json();
-        setActiveOrders(data.orders ?? []);
+  const loadShiftStatus = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const [ordRes] = await Promise.all([
+          roleFetch("/api/orders?mode=active"),
+          refreshBootstrap(),
+        ]);
+        if (ordRes.ok) {
+          const data = await ordRes.json();
+          setActiveOrders(data.orders ?? []);
+        }
+      } finally {
+        if (!silent) setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [roleFetch, refreshBootstrap]);
+    },
+    [roleFetch, refreshBootstrap]
+  );
 
   useEffect(() => {
-    loadShiftStatus();
+    loadShiftStatus(false);
+    const timer = setInterval(() => {
+      loadShiftStatus(true);
+    }, 5000);
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === "visible") {
+        loadShiftStatus(true);
+      }
+    };
+    window.addEventListener("focus", onFocusOrVisible);
+    document.addEventListener("visibilitychange", onFocusOrVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocusOrVisible);
+      document.removeEventListener("visibilitychange", onFocusOrVisible);
+    };
   }, [loadShiftStatus]);
 
   const handleMarkServed = async (order: CafeOrder) => {
-    const res = await roleFetch(`/api/orders/${encodeURIComponent(order.id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "status", prepStatus: "DaGiao" }),
-    });
-    if (res.ok) {
-      setNotice(`Đã giao nước xong cho phiếu ${order.orderNumber}!`);
-      await loadShiftStatus();
+    setBusyId(order.id);
+    // Cập nhật giao diện tức thì ngay khi bấm
+    setActiveOrders((prev) => prev.filter((o) => o.id !== order.id));
+    setNotice(`Đã giao nước xong cho phiếu ${order.orderNumber}!`);
+
+    try {
+      const res = await roleFetch(`/api/orders/${encodeURIComponent(order.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status", prepStatus: "DaGiao" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.activeOrders)) {
+          setActiveOrders(data.activeOrders);
+        }
+        if (Array.isArray(data.tables)) {
+          applyTables(data.tables);
+        }
+      } else {
+        await loadShiftStatus(true);
+      }
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleClearTable = async (tableId: string, tableName: string) => {
-    const res = await roleFetch(`/api/tables/${encodeURIComponent(tableId)}/clear`, {
-      method: "POST",
-    });
-    if (res.ok) {
-      setNotice(`${tableName} đã được dọn sạch và chuyển về trạng thái Bàn trống.`);
-      await loadShiftStatus();
+    setBusyId(tableId);
+    // Cập nhật trạng thái bàn trống và dọn luôn đơn gắn với bàn đó trên UI tức thì
+    applyTables(
+      tables.map((t) =>
+        t.id === tableId ? { ...t, status: "Trong", activeOrderId: null } : t
+      )
+    );
+    setActiveOrders((prev) => prev.filter((o) => o.tableId !== tableId));
+    setNotice(`${tableName} đã được dọn sạch và chuyển về trạng thái Bàn trống.`);
+
+    try {
+      const res = await roleFetch(`/api/tables/${encodeURIComponent(tableId)}/clear`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.tables)) {
+          applyTables(data.tables);
+        }
+        if (Array.isArray(data.activeOrders)) {
+          setActiveOrders(data.activeOrders);
+        }
+      } else {
+        await loadShiftStatus(true);
+      }
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -65,12 +121,12 @@ export default function TablesPage() {
             Sơ đồ bàn &amp; Nước chờ mang ra khách
           </h1>
           <p className="text-sm text-[#786254]">
-            Hiện còn <strong className="text-[#2F6B4F]">{emptyCount}/{tables.length} bàn trống</strong> sẵn sàng đón khách.
+            Hiện còn <strong className="text-[#2F6B4F]">{emptyCount}/{tables.length} bàn trống</strong> sẵn sàng đón khách • Tự động đồng bộ mỗi 5 giây.
           </p>
         </div>
         <button
           type="button"
-          onClick={loadShiftStatus}
+          onClick={() => loadShiftStatus(false)}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#F2E9DF] hover:bg-[#E6D8C8] text-sm font-semibold text-[#5C4638] cursor-pointer self-start sm:self-auto"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -140,8 +196,9 @@ export default function TablesPage() {
                   {isReady && (
                     <button
                       type="button"
+                      disabled={busyId === ord.id}
                       onClick={() => handleMarkServed(ord)}
-                      className="w-full py-2.5 px-4 rounded-xl bg-[#2F6B4F] hover:bg-[#24553E] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full py-2.5 px-4 rounded-xl bg-[#2F6B4F] hover:bg-[#24553E] disabled:opacity-60 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       Đã mang nước ra cho khách
@@ -196,8 +253,9 @@ export default function TablesPage() {
                       {occupied && (
                         <button
                           type="button"
+                          disabled={busyId === table.id}
                           onClick={() => handleClearTable(table.id, table.name)}
-                          className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#F2E9DF] border border-[#D8C2A8] text-xs font-semibold text-[#5C4638] cursor-pointer"
+                          className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#F2E9DF] disabled:opacity-60 border border-[#D8C2A8] text-xs font-semibold text-[#5C4638] cursor-pointer"
                         >
                           Khách đã về — Dọn bàn
                         </button>

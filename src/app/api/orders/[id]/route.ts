@@ -3,6 +3,8 @@ import { CafeService } from "@/server/services/CafeService";
 import { handleApiError, requireRequestRole } from "@/server/api-helpers";
 import type { PrepStatus } from "@/types/cafe";
 
+export const dynamic = "force-dynamic";
+
 export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -16,7 +18,11 @@ export async function PATCH(
     if (action === "cancel") {
       requireRequestRole(req, ["Manager"], "Hủy đơn hàng đã thanh toán");
       const order = await svc.cancelOrder(id, String(body.reason ?? "Khách đổi ý"));
-      return NextResponse.json({ order });
+      const [activeOrders, tables] = await Promise.all([
+        svc.listOrders(["ChoPha", "DangPha", "DaXong"], 50),
+        svc.listTables(),
+      ]);
+      return NextResponse.json({ order, activeOrders, tables });
     }
 
     const nextStatus = String(body.prepStatus ?? "") as PrepStatus;
@@ -27,7 +33,12 @@ export async function PATCH(
     }
 
     const order = await svc.updatePrepStatus(id, nextStatus);
-    return NextResponse.json({ order });
+    const [activeOrders, baristaOrders, tables] = await Promise.all([
+      svc.listOrders(["ChoPha", "DangPha", "DaXong"], 50),
+      svc.listOrders(["ChoPha", "DangPha"], 50),
+      svc.listTables(),
+    ]);
+    return NextResponse.json({ order, activeOrders, baristaOrders, tables });
   } catch (err) {
     return handleApiError(err, "Không thể cập nhật trạng thái đơn.");
   }

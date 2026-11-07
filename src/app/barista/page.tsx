@@ -38,6 +38,12 @@ export default function BaristaPage() {
 
   const advanceOrder = async (orderId: string, nextStatus: PrepStatus) => {
     setBusyId(orderId);
+    // Cập nhật giao diện tức thì cho Barista
+    setOrders((prev) =>
+      nextStatus === "DaXong"
+        ? prev.filter((o) => o.id !== orderId)
+        : prev.map((o) => (o.id === orderId ? { ...o, prepStatus: nextStatus } : o))
+    );
     try {
       const res = await roleFetch(`/api/orders/${encodeURIComponent(orderId)}`, {
         method: "PATCH",
@@ -45,6 +51,13 @@ export default function BaristaPage() {
         body: JSON.stringify({ action: "status", prepStatus: nextStatus }),
       });
       if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.baristaOrders)) {
+          setOrders(data.baristaOrders);
+        } else {
+          await loadQueue();
+        }
+      } else {
         await loadQueue();
       }
     } finally {

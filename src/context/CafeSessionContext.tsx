@@ -22,6 +22,7 @@ interface CafeSessionValue {
   shopInfo: ShopPublicInfo;
   switchStaff: (staffId: string) => void;
   refreshBootstrap: () => Promise<void>;
+  applyTables: (nextTables: CafeTable[]) => void;
   roleFetch: (input: string, init?: RequestInit) => Promise<Response>;
 }
 
@@ -48,6 +49,7 @@ const CafeSessionContext = createContext<CafeSessionValue>({
   shopInfo: DEFAULT_SHOP_INFO,
   switchStaff: () => {},
   refreshBootstrap: async () => {},
+  applyTables: () => {},
   roleFetch: (input, init) => fetch(input, init),
 });
 
@@ -64,7 +66,7 @@ export function CafeSessionProvider({ children }: { children: React.ReactNode })
 
   const refreshBootstrap = useCallback(async () => {
     try {
-      const res = await fetch("/api/bootstrap");
+      const res = await fetch("/api/bootstrap", { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
       if (Array.isArray(data.staff) && data.staff.length > 0) setStaffList(data.staff);
@@ -80,6 +82,10 @@ export function CafeSessionProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     refreshBootstrap();
   }, [refreshBootstrap]);
+
+  const applyTables = useCallback((nextTables: CafeTable[]) => {
+    setTables(nextTables);
+  }, []);
 
   const currentStaff =
     staffList.find((s) => s.id === activeStaffId) ?? staffList[0] ?? DEFAULT_STAFF_LIST[0];
@@ -99,7 +105,7 @@ export function CafeSessionProvider({ children }: { children: React.ReactNode })
     (input: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       headers.set("x-staff-role", currentStaff.role);
-      return fetch(input, { ...init, headers });
+      return fetch(input, { cache: "no-store", ...init, headers });
     },
     [currentStaff.role]
   );
@@ -115,6 +121,7 @@ export function CafeSessionProvider({ children }: { children: React.ReactNode })
         shopInfo,
         switchStaff,
         refreshBootstrap,
+        applyTables,
         roleFetch,
       }}
     >

@@ -1,4 +1,4 @@
-import { ensureCafeDbReady, getDbClient } from "@/server/db/client";
+import { ensureCafeDbReady, getDbClient, persistCafeDbToBlob } from "@/server/db/client";
 import { CUP_SIZE_OPTIONS } from "@/lib/format";
 import type {
   CafeOrder,
@@ -340,9 +340,24 @@ export class CafeService {
     }
 
     await db.batch(batchStmts, "write");
+    await persistCafeDbToBlob();
     const created = await this.getOrderById(orderId);
     if (!created) throw new Error("Không thể đọc lại đơn hàng vừa tạo.");
     return created;
+  }
+
+  async listTables(): Promise<CafeTable[]> {
+    await ensureCafeDbReady();
+    const db = getDbClient();
+    const tableRes = await db.execute("SELECT * FROM cafe_tables ORDER BY id ASC");
+    return tableRes.rows.map((r) => ({
+      id: String(r.id),
+      name: String(r.name),
+      zone: String(r.zone),
+      seats: Number(r.seats),
+      status: String(r.status) as "Trong" | "CoKhach",
+      activeOrderId: r.active_order_id ? String(r.active_order_id) : null,
+    }));
   }
 
   async getOrderById(orderId: string): Promise<CafeOrder | null> {
@@ -401,6 +416,7 @@ export class CafeService {
       sql: "UPDATE cafe_orders SET prep_status = ?, updated_at = ? WHERE id = ?",
       args: [nextStatus, nowIso, orderId],
     });
+    await persistCafeDbToBlob();
     const updated = await this.getOrderById(orderId);
     if (!updated) throw new Error("Không tìm thấy đơn hàng.");
     return updated;
@@ -417,19 +433,25 @@ export class CafeService {
       ? String(tRes.rows[0].active_order_id)
       : null;
 
+    const nowIso = new Date().toISOString();
     const stmts = [
       {
         sql: "UPDATE cafe_tables SET status = 'Trong', active_order_id = NULL WHERE id = ?",
         args: [tableId],
       },
+      {
+        sql: "UPDATE cafe_orders SET prep_status = 'DaGiao', updated_at = ? WHERE table_id = ? AND prep_status IN ('ChoPha', 'DangPha', 'DaXong')",
+        args: [nowIso, tableId],
+      },
     ];
     if (activeOrderId) {
       stmts.push({
-        sql: "UPDATE cafe_orders SET prep_status = 'DaGiao', updated_at = ? WHERE id = ? AND prep_status = 'DaXong'",
-        args: [new Date().toISOString(), activeOrderId],
+        sql: "UPDATE cafe_orders SET prep_status = 'DaGiao', updated_at = ? WHERE id = ? AND prep_status IN ('ChoPha', 'DangPha', 'DaXong')",
+        args: [nowIso, activeOrderId],
       });
     }
     await db.batch(stmts, "write");
+    await persistCafeDbToBlob();
   }
 
   async toggleMenuAvailability(menuItemId: string, isAvailable: boolean): Promise<void> {
@@ -439,6 +461,7 @@ export class CafeService {
       sql: "UPDATE cafe_menu SET is_available = ? WHERE id = ?",
       args: [isAvailable ? 1 : 0, menuItemId],
     });
+    await persistCafeDbToBlob();
   }
 
   async listIngredients(): Promise<Ingredient[]> {
@@ -464,6 +487,7 @@ export class CafeService {
             WHERE id = ?`,
       args: [delta, new Date().toISOString(), id],
     });
+    await persistCafeDbToBlob();
     return this.listIngredients();
   }
 
@@ -512,6 +536,7 @@ export class CafeService {
         input.hasTempOption ? 1 : 0,
       ],
     });
+    await persistCafeDbToBlob();
   }
 
   async cancelOrder(orderId: string, reason: string): Promise<CafeOrder> {
@@ -533,6 +558,7 @@ export class CafeService {
       });
     }
     await db.batch(stmts, "write");
+    await persistCafeDbToBlob();
     const updated = await this.getOrderById(orderId);
     if (!updated) throw new Error("Lỗi cập nhật hủy đơn.");
     return updated;
@@ -645,6 +671,7 @@ export class CafeService {
       })),
       "write"
     );
+    await persistCafeDbToBlob();
     return this.getFullSettings();
   }
 
